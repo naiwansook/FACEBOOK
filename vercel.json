@@ -7,9 +7,3 @@
   ]
 }
 ```
-
-กด Save แล้วรัน:
-```
-git add .
-git commit -m "fix vercel.json"
-git push
