@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, RefreshCw, Pause, Play, Zap, TrendingUp, Users, MousePointer, DollarSign, Activity } from 'lucide-react'
 
@@ -357,7 +357,7 @@ export default function CampaignDetail() {
   )
 }
 
-function MetricCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: string }) {
+function MetricCard({ label, value, icon, color }: { label: string; value: string; icon: ReactNode; color: string }) {
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: '12px 14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color }}>

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { Bell, Plus, ChevronRight, TrendingUp, Activity, DollarSign, Target, LogOut, X, ArrowLeft } from 'lucide-react'
 
@@ -187,7 +187,7 @@ export default function Dashboard() {
   )
 }
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
+function StatCard({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color: string }) {
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ background: `${color}20`, borderRadius: 8, padding: 8, color }}>{icon}</div>
