@@ -13,6 +13,10 @@ export default function Dashboard() {
     fetch('/api/ads').then(r => r.json()).then(d => setCampaigns(d.campaigns || []))
   }, [])
 
+  const refreshCampaigns = () => {
+    fetch('/api/ads').then(r => r.json()).then(d => setCampaigns(d.campaigns || []))
+  }
+
   if (!mounted) return null
 
   return (
@@ -49,19 +53,39 @@ export default function Dashboard() {
         ) : (
           campaigns.map((c: any) => (
             <div key={c.id} style={{ padding: 16, background: 'rgba(255,255,255,0.05)', borderRadius: 10, marginBottom: 8, textAlign: 'left' }}>
-              <p style={{ fontWeight: 600 }}>{c.campaign_name}</p>
-              <p style={{ fontSize: 12, color: '#64748b' }}>งบ: ฿{c.daily_budget}/วัน · สถานะ: {c.status}</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontWeight: 600, marginBottom: 4 }}>{c.campaign_name}</p>
+                  <p style={{ fontSize: 12, color: '#64748b' }}>งบ: ฿{c.daily_budget}/วัน · สถานะ: {c.status}</p>
+                  {c.fb_campaign_id && (
+                    <p style={{ fontSize: 11, color: '#4b5563', marginTop: 4 }}>FB ID: {c.fb_campaign_id}</p>
+                  )}
+                </div>
+                <span style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 999,
+                  background: c.status === 'active' ? 'rgba(74,222,128,0.15)' : 'rgba(100,116,139,0.15)',
+                  color: c.status === 'active' ? '#4ade80' : '#64748b',
+                }}>
+                  {c.status === 'active' ? '● กำลังวิ่ง' : c.status}
+                </span>
+              </div>
             </div>
           ))
         )}
       </div>
 
-      {showModal && <BoostModal pages={pages} onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <BoostModal
+          pages={pages}
+          onClose={() => setShowModal(false)}
+          onSuccess={refreshCampaigns}
+        />
+      )}
     </div>
   )
 }
 
-function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
+function BoostModal({ pages, onClose, onSuccess }: { pages: any[], onClose: () => void, onSuccess: () => void }) {
   const [step, setStep] = useState(1)
   const [selectedPage, setSelectedPage] = useState<any>(null)
   const [posts, setPosts] = useState<any[]>([])
@@ -69,35 +93,62 @@ function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
   const [budget, setBudget] = useState(100)
   const [days, setDays] = useState(7)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [loadingPosts, setLoadingPosts] = useState(false)
 
   const fetchPosts = async (page: any) => {
-  const res = await fetch(
-    `/api/posts?pageId=${page.id}&pageToken=${encodeURIComponent(page.access_token)}`
-  )
-  const data = await res.json()
-  console.log('Posts:', data)
-  setPosts(data.posts || [])
-}
+    setLoadingPosts(true)
+    setError('')
+    try {
+      const res = await fetch(
+        `/api/posts?pageId=${page.id}&pageToken=${encodeURIComponent(page.access_token)}`
+      )
+      const data = await res.json()
+      if (data.error) {
+        setError(data.error)
+      }
+      setPosts(data.posts || [])
+    } catch {
+      setError('ไม่สามารถดึงโพสต์ได้')
+    } finally {
+      setLoadingPosts(false)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!selectedPage || !selectedPost) return
     setSubmitting(true)
+    setError('')
+
     const endDate = new Date()
     endDate.setDate(endDate.getDate() + days)
-    await fetch('/api/ads/create', {
+
+    const res = await fetch('/api/ads/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         postId: selectedPost.id,
+        pageId: selectedPage.id,
+        pageToken: selectedPage.access_token,
+        pageName: selectedPage.name,
+        postMessage: selectedPost.message,
         campaignName: `Boost - ${selectedPost.message?.slice(0, 30) || selectedPost.id}`,
         dailyBudget: budget,
         startDate: new Date().toISOString(),
         endDate: endDate.toISOString(),
       }),
     })
+
+    const data = await res.json()
     setSubmitting(false)
+
+    if (!res.ok || data.error) {
+      setError(data.error || 'เกิดข้อผิดพลาด')
+      return
+    }
+
     onClose()
-    window.location.reload()
+    onSuccess()
   }
 
   return (
@@ -107,6 +158,12 @@ function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
           <h2 style={{ fontSize: 18, fontWeight: 700 }}>🚀 ยิงแอดใหม่ (ขั้นที่ {step}/3)</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 20 }}>×</button>
         </div>
+
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#f87171' }}>
+            ❌ {error}
+          </div>
+        )}
 
         {step === 1 && (
           <div>
@@ -126,7 +183,11 @@ function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
           <div>
             <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', marginBottom: 12, fontSize: 13 }}>← กลับ</button>
             <p style={{ color: '#64748b', marginBottom: 12, fontSize: 13 }}>เลือกโพสต์จาก {selectedPage?.name}</p>
-            {posts.map((p: any) => (
+            {loadingPosts ? (
+              <p style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>กำลังโหลดโพสต์...</p>
+            ) : posts.length === 0 ? (
+              <p style={{ color: '#64748b', fontSize: 13 }}>ไม่พบโพสต์</p>
+            ) : posts.map((p: any) => (
               <button key={p.id} onClick={() => { setSelectedPost(p); setStep(3) }}
                 style={{ width: '100%', padding: '12px 16px', marginBottom: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'white', cursor: 'pointer', textAlign: 'left', fontSize: 13 }}>
                 {p.message?.slice(0, 80) || p.story || 'ไม่มีข้อความ'}
@@ -142,17 +203,17 @@ function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>งบต่อวัน (บาท)</label>
               <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))}
-                style={{ width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 14 }} />
+                style={{ width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 14, boxSizing: 'border-box' }} />
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>จำนวนวัน</label>
               <input type="number" value={days} onChange={e => setDays(Number(e.target.value))}
-                style={{ width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 14 }} />
+                style={{ width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 14, boxSizing: 'border-box' }} />
             </div>
             <p style={{ fontSize: 13, color: '#4ade80', marginBottom: 16 }}>งบรวม: ฿{budget * days}</p>
             <button onClick={handleSubmit} disabled={submitting}
-              style={{ width: '100%', padding: '12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 700 }}>
-              {submitting ? 'กำลังสร้าง...' : '🚀 ยิงแอดเลย!'}
+              style={{ width: '100%', padding: '12px', background: submitting ? '#4338ca' : '#6366f1', color: 'white', border: 'none', borderRadius: 10, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 15, fontWeight: 700 }}>
+              {submitting ? '⏳ กำลังสร้างแอด...' : '🚀 ยิงแอดเลย!'}
             </button>
           </div>
         )}

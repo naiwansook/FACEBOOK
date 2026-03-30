@@ -129,7 +129,7 @@ export async function createAd(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: `Creative - ${opts.name}`,
-      object_story_id: `${opts.pageId}_${opts.postId}`,
+      object_story_id: opts.postId,
       access_token: pageToken,
     }),
   })

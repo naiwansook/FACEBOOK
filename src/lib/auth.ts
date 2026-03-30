@@ -8,7 +8,7 @@ export const authOptions = {
       authorization: {
         params: {
           scope: 'ads_management,ads_read,pages_show_list,pages_read_engagement',
-          redirect_uri: 'https://fb-ads-manager.vercel.app/api/auth/callback/facebook',
+          redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/facebook`,
         },
       },
     }),
