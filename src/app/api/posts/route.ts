@@ -6,17 +6,19 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const pageToken = searchParams.get('pageToken')
+    const pageId = searchParams.get('pageId')
 
-    if (!pageToken) {
+    if (!pageToken || !pageId) {
       return NextResponse.json({ posts: [] })
     }
 
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/me/posts?fields=id,message,story,full_picture,created_time,reactions.summary(true)&limit=20&access_token=${pageToken}`
+      `https://graph.facebook.com/v19.0/${pageId}/posts?fields=id,message,story,full_picture,created_time,reactions.summary(true)&limit=20&access_token=${pageToken}`
     )
     const data = await res.json()
 
     if (data.error) {
+      console.error('FB Posts Error:', data.error)
       return NextResponse.json({ error: data.error.message, posts: [] })
     }
 
