@@ -9,7 +9,7 @@ const handler = NextAuth({
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope: 'email,public_profile,pages_show_list,pages_manage_ads,pages_read_engagement,ads_management,ads_read',
+          scope: 'email,public_profile',
           redirect_uri: 'https://fb-ads-manager.vercel.app/api/auth/callback/facebook',
         },
       },
