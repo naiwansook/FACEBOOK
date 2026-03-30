@@ -71,8 +71,11 @@ function BoostModal({ pages, onClose }: { pages: any[], onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
 
   const fetchPosts = async (page: any) => {
-  const res = await fetch(`/api/posts?pageId=${page.id}&pageToken=${page.access_token}`)
+  const res = await fetch(
+    `/api/posts?pageId=${page.id}&pageToken=${encodeURIComponent(page.access_token)}`
+  )
   const data = await res.json()
+  console.log('Posts:', data)
   setPosts(data.posts || [])
 }
 
