@@ -57,7 +57,7 @@ export async function createCampaign(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name,
-      objective: 'POST_ENGAGEMENT',
+      objective: 'OUTCOME_ENGAGEMENT',
       status: 'ACTIVE',
       special_ad_categories: [],
       access_token: pageToken,
@@ -92,7 +92,7 @@ export async function createAdSet(
       start_time: opts.startTime,
       end_time: opts.endTime,
       billing_event: 'IMPRESSIONS',
-      optimization_goal: 'POST_ENGAGEMENT',
+      optimization_goal: 'ENGAGED_USERS',
       targeting: {
         age_min: opts.targeting.ageMin,
         age_max: opts.targeting.ageMax,
