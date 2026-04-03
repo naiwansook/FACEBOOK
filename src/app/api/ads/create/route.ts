@@ -128,7 +128,7 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: campaignName,
-          objective: 'OUTCOME_ENGAGEMENT',
+          objective: 'OUTCOME_AWARENESS',
           status: 'PAUSED',
           buying_type: 'AUCTION',
           special_ad_categories: [],
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
           start_time: startDate || new Date().toISOString(),
           end_time: endDate,
           billing_event: 'IMPRESSIONS',
-          optimization_goal: 'ENGAGED_USERS',
+          optimization_goal: 'REACH',
           targeting: {
             age_min: 20,
             age_max: 65,
