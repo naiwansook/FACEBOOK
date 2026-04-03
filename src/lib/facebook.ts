@@ -179,17 +179,126 @@ export async function getCampaignInsights(
 /** หยุด / เปิด Campaign */
 export async function updateCampaignStatus(
   campaignId: string,
-  pageToken: string,
+  accessToken: string,
   status: 'ACTIVE' | 'PAUSED'
 ) {
   const res = await fetch(`${FB_API}/${campaignId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, access_token: pageToken }),
+    body: JSON.stringify({ status, access_token: accessToken }),
   })
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
   return data.success as boolean
+}
+
+/** เปิด/ปิด ทั้ง 3 ระดับ: Campaign + Ad Set + Ad */
+export async function updateAllStatus(
+  accessToken: string,
+  fbCampaignId: string,
+  fbAdSetId?: string | null,
+  fbAdId?: string | null,
+  status: 'ACTIVE' | 'PAUSED' = 'ACTIVE'
+) {
+  const results: { campaign?: boolean; adset?: boolean; ad?: boolean; errors: string[] } = { errors: [] }
+
+  // 1. Campaign
+  try {
+    const r = await fetch(`${FB_API}/${fbCampaignId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, access_token: accessToken }),
+    })
+    const d = await r.json()
+    if (d.error) results.errors.push(`Campaign: ${d.error.message}`)
+    else results.campaign = d.success
+  } catch (e: any) { results.errors.push(`Campaign: ${e.message}`) }
+
+  // 2. Ad Set
+  if (fbAdSetId) {
+    try {
+      const r = await fetch(`${FB_API}/${fbAdSetId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, access_token: accessToken }),
+      })
+      const d = await r.json()
+      if (d.error) results.errors.push(`AdSet: ${d.error.message}`)
+      else results.adset = d.success
+    } catch (e: any) { results.errors.push(`AdSet: ${e.message}`) }
+  }
+
+  // 3. Ad
+  if (fbAdId) {
+    try {
+      const r = await fetch(`${FB_API}/${fbAdId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, access_token: accessToken }),
+      })
+      const d = await r.json()
+      if (d.error) results.errors.push(`Ad: ${d.error.message}`)
+      else results.ad = d.success
+    } catch (e: any) { results.errors.push(`Ad: ${e.message}`) }
+  }
+
+  return results
+}
+
+/** ดึงสถานะจริงจาก Facebook ทั้ง 3 ระดับ */
+export async function getRealStatus(
+  accessToken: string,
+  fbCampaignId: string,
+  fbAdSetId?: string | null,
+  fbAdId?: string | null,
+) {
+  const result: {
+    campaign?: { status: string; effective_status: string }
+    adset?: { status: string; effective_status: string }
+    ad?: { status: string; effective_status: string }
+    overall: string
+  } = { overall: 'UNKNOWN' }
+
+  // Campaign status
+  try {
+    const r = await fetch(`${FB_API}/${fbCampaignId}?fields=status,effective_status&access_token=${accessToken}`)
+    const d = await r.json()
+    if (!d.error) result.campaign = { status: d.status, effective_status: d.effective_status }
+  } catch {}
+
+  // AdSet status
+  if (fbAdSetId) {
+    try {
+      const r = await fetch(`${FB_API}/${fbAdSetId}?fields=status,effective_status&access_token=${accessToken}`)
+      const d = await r.json()
+      if (!d.error) result.adset = { status: d.status, effective_status: d.effective_status }
+    } catch {}
+  }
+
+  // Ad status
+  if (fbAdId) {
+    try {
+      const r = await fetch(`${FB_API}/${fbAdId}?fields=status,effective_status&access_token=${accessToken}`)
+      const d = await r.json()
+      if (!d.error) result.ad = { status: d.status, effective_status: d.effective_status }
+    } catch {}
+  }
+
+  // Determine overall: all must be ACTIVE for ad to run
+  const statuses = [
+    result.campaign?.effective_status,
+    result.adset?.effective_status,
+    result.ad?.effective_status,
+  ].filter(Boolean)
+
+  if (statuses.length === 0) result.overall = 'UNKNOWN'
+  else if (statuses.every(s => s === 'ACTIVE')) result.overall = 'ACTIVE'
+  else if (statuses.some(s => s === 'PAUSED' || s === 'CAMPAIGN_PAUSED' || s === 'ADSET_PAUSED')) result.overall = 'PAUSED'
+  else if (statuses.some(s => s === 'PENDING_REVIEW' || s === 'IN_PROCESS')) result.overall = 'PENDING_REVIEW'
+  else if (statuses.some(s => s === 'DISAPPROVED')) result.overall = 'DISAPPROVED'
+  else result.overall = statuses[statuses.length - 1] || 'UNKNOWN'
+
+  return result
 }
 
 /** อัปเดต Daily Budget */

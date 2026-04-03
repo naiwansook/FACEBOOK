@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
+import { getRealStatus } from '@/lib/facebook'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,7 @@ export async function GET() {
     if (!session?.accessToken) {
       return NextResponse.json({ campaigns: [], summary: null })
     }
+    const userToken = session.accessToken as string
 
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ campaigns: [], summary: null })
@@ -22,7 +24,7 @@ export async function GET() {
     )
 
     const meRes = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${session.accessToken}`
+      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${userToken}`
     )
     const meData = await meRes.json()
     if (meData.error || !meData.id) {
@@ -75,10 +77,34 @@ export async function GET() {
       if (!analysisMap[a.campaign_id]) analysisMap[a.campaign_id] = a
     }
 
-    // Enrich campaigns with performance + analysis
+    // Fetch real Facebook status for each campaign (parallel, max 5 at a time)
+    const fbStatusMap: Record<string, any> = {}
+    const statusPromises = campaigns.map(async (c) => {
+      if (!c.fb_campaign_id) return
+      try {
+        const status = await getRealStatus(userToken, c.fb_campaign_id, c.fb_adset_id, c.fb_ad_id)
+        fbStatusMap[c.id] = status
+
+        // Auto-sync DB status if different from Facebook
+        const fbOverall = status.overall
+        const dbStatus = c.status
+        let newDbStatus: string | null = null
+        if (fbOverall === 'ACTIVE' && dbStatus !== 'active') newDbStatus = 'active'
+        else if ((fbOverall === 'PAUSED' || fbOverall === 'CAMPAIGN_PAUSED' || fbOverall === 'ADSET_PAUSED') && dbStatus !== 'paused') newDbStatus = 'paused'
+
+        if (newDbStatus) {
+          await supabase.from('ad_campaigns').update({ status: newDbStatus }).eq('id', c.id)
+          c.status = newDbStatus // update in-memory too
+        }
+      } catch {}
+    })
+    await Promise.all(statusPromises)
+
+    // Enrich campaigns with performance + analysis + real FB status
     const enriched = campaigns.map(c => {
       const perf = perfMap[c.id] || null
       const analysis = analysisMap[c.id] || null
+      const fbStatus = fbStatusMap[c.id] || null
       const now = new Date()
       const start = c.start_time ? new Date(c.start_time) : now
       const end = c.end_time ? new Date(c.end_time) : now
@@ -108,6 +134,12 @@ export async function GET() {
           confidence: analysis.confidence_score,
           summary: analysis.summary,
           analyzed_at: analysis.created_at,
+        } : null,
+        fbStatus: fbStatus ? {
+          campaign: fbStatus.campaign,
+          adset: fbStatus.adset,
+          ad: fbStatus.ad,
+          overall: fbStatus.overall,
         } : null,
         totalBudget,
         budgetRemaining: Math.max(0, totalBudget - spend),

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent } from 'lucide-react'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, RefreshCw } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -89,6 +89,35 @@ export default function Dashboard() {
     await fetch('/api/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: 'all' }) })
     setUnreadCount(0)
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+  }
+
+  const [toggling, setToggling] = useState<string | null>(null)
+
+  async function handleToggle(campaignId: string, action: 'pause' | 'resume') {
+    if (toggling) return
+    setToggling(campaignId)
+    try {
+      const res = await fetch(`/api/ads/${campaignId}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        alert(`ไม่สำเร็จ: ${data.error || 'เกิดข้อผิดพลาด'}`)
+      } else {
+        // Update local state immediately
+        setCampaigns(prev => prev.map(c =>
+          c.id === campaignId ? { ...c, status: action === 'pause' ? 'paused' : 'active' } : c
+        ))
+        // Reload all data in background
+        loadAll()
+      }
+    } catch (e: any) {
+      alert(`ไม่สำเร็จ: ${e.message}`)
+    } finally {
+      setToggling(null)
+    }
   }
 
   return (
@@ -190,7 +219,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} />)}
+            {campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} />)}
           </div>
         )}
       </div>
@@ -219,8 +248,21 @@ function MiniCard({ icon, label, value, color, bg, accent, small }: { icon: Reac
   )
 }
 
-// ─── Campaign Card (with metrics) ──────────────────────────────
-function CampaignCard({ campaign: c }: { campaign: any }) {
+// ─── FB Status helpers ────────────────────────────────────────
+const fbStatusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  ACTIVE:         { label: 'FB: ACTIVE',         color: GREEN,    bg: GREEN_L },
+  PAUSED:         { label: 'FB: PAUSED',         color: YELLOW,   bg: YELLOW_L },
+  CAMPAIGN_PAUSED:{ label: 'FB: Campaign หยุด',  color: YELLOW,   bg: YELLOW_L },
+  ADSET_PAUSED:   { label: 'FB: AdSet หยุด',     color: YELLOW,   bg: YELLOW_L },
+  PENDING_REVIEW: { label: 'FB: รอตรวจสอบ',      color: '#2563eb', bg: '#dbeafe' },
+  IN_PROCESS:     { label: 'FB: กำลังประมวลผล',   color: CYAN,     bg: CYAN_L },
+  DISAPPROVED:    { label: 'FB: ไม่ผ่าน',         color: RED,      bg: RED_L },
+  DELETED:        { label: 'FB: ถูกลบ',           color: MUTED,    bg: '#f1f5f9' },
+  UNKNOWN:        { label: 'FB: ไม่ทราบ',         color: MUTED,    bg: '#f1f5f9' },
+}
+
+// ─── Campaign Card (with metrics + FB status + toggle) ────────
+function CampaignCard({ campaign: c, onToggle }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void }) {
   const isActive = c.status === 'active'
   const isPaused = c.status === 'paused'
   const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
@@ -231,80 +273,110 @@ function CampaignCard({ campaign: c }: { campaign: any }) {
   const rec = analysis ? recConfig[analysis.recommendation] : null
   const spendPercent = c.totalBudget > 0 ? Math.min(100, (perf?.spend || 0) / c.totalBudget * 100) : 0
 
-  return (
-    <a href={`/dashboard/campaign/${c.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-      <div style={{
-        background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 20,
-        padding: '20px 24px', cursor: 'pointer', boxShadow: SHADOW_RAISED, transition: 'all 0.2s',
-      }}
-        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 10px 36px rgba(67,56,202,0.18)'; e.currentTarget.style.transform = 'translateY(-3px)' }}
-        onMouseLeave={e => { e.currentTarget.style.boxShadow = SHADOW_RAISED; e.currentTarget.style.transform = 'translateY(0)' }}>
+  // Real Facebook status
+  const fbOverall = c.fbStatus?.overall || null
+  const fbConf = fbOverall ? (fbStatusConfig[fbOverall] || fbStatusConfig.UNKNOWN) : null
 
-        {/* Top row: name + status */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              📌 {c.campaign_name}
-            </div>
-            <div style={{ fontSize: 11, color: MUTED, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontWeight: 700, color: GREEN, background: GREEN_L, padding: '2px 10px', borderRadius: 999 }}>฿{fmt(c.daily_budget)}/วัน</span>
-              <span>{fmtDate(c.start_time)} — {fmtDate(c.end_time)}</span>
-            </div>
+  return (
+    <div style={{
+      background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 20,
+      padding: '20px 24px', boxShadow: SHADOW_RAISED, transition: 'all 0.2s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 10px 36px rgba(67,56,202,0.18)'; e.currentTarget.style.transform = 'translateY(-3px)' }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = SHADOW_RAISED; e.currentTarget.style.transform = 'translateY(0)' }}>
+
+      {/* Top row: name + status + toggle */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <a href={`/dashboard/campaign/${c.id}`} style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+            📌 {c.campaign_name}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {rec && (
-              <span style={{ fontSize: 10, fontWeight: 800, color: rec.color, background: rec.bg, padding: '3px 10px', borderRadius: 999 }}>
-                {rec.icon} {rec.label}
-              </span>
-            )}
-            <span style={{ fontSize: 11, fontWeight: 800, color: statusColor, background: statusBg, padding: '4px 13px', borderRadius: 999, border: `1px solid ${statusColor}35` }}>
-              {statusLabel}
+          <div style={{ fontSize: 11, color: MUTED, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, color: GREEN, background: GREEN_L, padding: '2px 10px', borderRadius: 999 }}>฿{fmt(c.daily_budget)}/วัน</span>
+            <span>{fmtDate(c.start_time)} — {fmtDate(c.end_time)}</span>
+          </div>
+        </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {rec && (
+            <span style={{ fontSize: 10, fontWeight: 800, color: rec.color, background: rec.bg, padding: '3px 10px', borderRadius: 999 }}>
+              {rec.icon} {rec.label}
             </span>
-            <div style={{ width: 30, height: 30, background: 'linear-gradient(145deg, #ffffff, #e8eeff)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PRIMARY, border: `1px solid ${BORDER}` }}>
+          )}
+          {/* DB status badge */}
+          <span style={{ fontSize: 11, fontWeight: 800, color: statusColor, background: statusBg, padding: '4px 13px', borderRadius: 999, border: `1px solid ${statusColor}35` }}>
+            {statusLabel}
+          </span>
+          {/* Real Facebook status badge */}
+          {fbConf && (
+            <span style={{ fontSize: 10, fontWeight: 800, color: fbConf.color, background: fbConf.bg, padding: '3px 10px', borderRadius: 999, border: `1px solid ${fbConf.color}30` }}>
+              {fbConf.label}
+            </span>
+          )}
+          {/* Toggle button */}
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(c.id, isActive ? 'pause' : 'resume') }}
+            title={isActive ? 'หยุดแอด' : 'เปิดแอด'}
+            style={{
+              width: 34, height: 34, borderRadius: 10, border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: isActive
+                ? 'linear-gradient(135deg, #dc2626, #f87171)'
+                : 'linear-gradient(135deg, #059669, #34d399)',
+              color: 'white',
+              boxShadow: isActive
+                ? '0 4px 12px rgba(220,38,38,0.35)'
+                : '0 4px 12px rgba(5,150,105,0.35)',
+              transition: 'all 0.18s',
+            }}
+          >
+            <Power size={15} />
+          </button>
+          <a href={`/dashboard/campaign/${c.id}`} style={{ textDecoration: 'none' }}>
+            <div style={{ width: 30, height: 30, background: 'linear-gradient(145deg, #ffffff, #e8eeff)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PRIMARY, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
               <ChevronRight size={15} />
             </div>
-          </div>
+          </a>
         </div>
-
-        {/* Budget progress bar */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
-            <span style={{ color: MUTED, fontWeight: 600 }}>ใช้จ่าย ฿{fmt(perf?.spend || 0, 2)} / ฿{fmt(c.totalBudget, 0)}</span>
-            <span style={{ color: spendPercent > 80 ? RED : spendPercent > 50 ? YELLOW : GREEN, fontWeight: 700 }}>{fmt(spendPercent, 1)}%</span>
-          </div>
-          <div style={{ height: 6, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 3,
-              width: `${spendPercent}%`,
-              background: spendPercent > 80 ? `linear-gradient(90deg, ${RED}, #f87171)` : spendPercent > 50 ? `linear-gradient(90deg, ${YELLOW}, #fbbf24)` : `linear-gradient(90deg, ${GREEN}, #34d399)`,
-              transition: 'width 0.5s ease',
-            }} />
-          </div>
-        </div>
-
-        {/* Metrics row */}
-        {perf ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            <MetricPill label="Impressions" value={fmt(perf.impressions)} icon="👁️" />
-            <MetricPill label="Reach" value={fmt(perf.reach)} icon="👥" />
-            <MetricPill label="Clicks" value={fmt(perf.clicks)} icon="🖱️" />
-            <MetricPill label="CTR" value={`${fmt(perf.ctr, 2)}%`} icon="📊" color={perf.ctr >= 1.5 ? GREEN : perf.ctr >= 0.8 ? YELLOW : RED} />
-            <MetricPill label="CPC" value={`฿${fmt(perf.cpc, 2)}`} icon="💸" color={perf.cpc > 0 && perf.cpc <= 5 ? GREEN : perf.cpc <= 15 ? YELLOW : RED} />
-          </div>
-        ) : (
-          <div style={{ background: SURFACE2, borderRadius: 10, padding: '10px 14px', textAlign: 'center', fontSize: 12, color: MUTED, fontWeight: 600 }}>
-            ⏳ ยังไม่มีข้อมูล performance — กดเข้าไปซิงค์ข้อมูลได้เลย
-          </div>
-        )}
-
-        {/* AI summary */}
-        {analysis && (
-          <div style={{ marginTop: 12, background: SURFACE2, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: MUTED, lineHeight: 1.6 }}>
-            <span style={{ fontWeight: 700, color: TEXT }}>🤖 AI:</span> {analysis.summary}
-          </div>
-        )}
       </div>
-    </a>
+
+      {/* Budget progress bar */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
+          <span style={{ color: MUTED, fontWeight: 600 }}>ใช้จ่าย ฿{fmt(perf?.spend || 0, 2)} / ฿{fmt(c.totalBudget, 0)}</span>
+          <span style={{ color: spendPercent > 80 ? RED : spendPercent > 50 ? YELLOW : GREEN, fontWeight: 700 }}>{fmt(spendPercent, 1)}%</span>
+        </div>
+        <div style={{ height: 6, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', borderRadius: 3,
+            width: `${spendPercent}%`,
+            background: spendPercent > 80 ? `linear-gradient(90deg, ${RED}, #f87171)` : spendPercent > 50 ? `linear-gradient(90deg, ${YELLOW}, #fbbf24)` : `linear-gradient(90deg, ${GREEN}, #34d399)`,
+            transition: 'width 0.5s ease',
+          }} />
+        </div>
+      </div>
+
+      {/* Metrics row */}
+      {perf ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          <MetricPill label="Impressions" value={fmt(perf.impressions)} icon="👁️" />
+          <MetricPill label="Reach" value={fmt(perf.reach)} icon="👥" />
+          <MetricPill label="Clicks" value={fmt(perf.clicks)} icon="🖱️" />
+          <MetricPill label="CTR" value={`${fmt(perf.ctr, 2)}%`} icon="📊" color={perf.ctr >= 1.5 ? GREEN : perf.ctr >= 0.8 ? YELLOW : RED} />
+          <MetricPill label="CPC" value={`฿${fmt(perf.cpc, 2)}`} icon="💸" color={perf.cpc > 0 && perf.cpc <= 5 ? GREEN : perf.cpc <= 15 ? YELLOW : RED} />
+        </div>
+      ) : (
+        <div style={{ background: SURFACE2, borderRadius: 10, padding: '10px 14px', textAlign: 'center', fontSize: 12, color: MUTED, fontWeight: 600 }}>
+          ⏳ ยังไม่มีข้อมูล performance — กดเข้าไปซิงค์ข้อมูลได้เลย
+        </div>
+      )}
+
+      {/* AI summary */}
+      {analysis && (
+        <div style={{ marginTop: 12, background: SURFACE2, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: MUTED, lineHeight: 1.6 }}>
+          <span style={{ fontWeight: 700, color: TEXT }}>🤖 AI:</span> {analysis.summary}
+        </div>
+      )}
+    </div>
   )
 }
 

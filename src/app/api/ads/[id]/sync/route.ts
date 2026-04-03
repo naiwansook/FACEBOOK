@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { getCampaignInsights } from '@/lib/facebook'
+import { getCampaignInsights, getRealStatus, updateAllStatus } from '@/lib/facebook'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +14,7 @@ export async function POST(
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userToken = session.accessToken as string
 
     const { createClient } = await import('@supabase/supabase-js')
     const supabase = createClient(
@@ -23,7 +24,7 @@ export async function POST(
 
     // Get Facebook user ID
     const meRes = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${session.accessToken}`
+      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${userToken}`
     )
     const meData = await meRes.json()
     if (meData.error) throw new Error(meData.error.message)
@@ -36,10 +37,10 @@ export async function POST(
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    // Get campaign + page token (verify ownership)
+    // Get campaign (verify ownership)
     const { data: campaign } = await supabase
       .from('ad_campaigns')
-      .select(`*, connected_pages!page_id (page_access_token)`)
+      .select('*')
       .eq('id', params.id)
       .eq('user_id', user.id)
       .single()
@@ -47,13 +48,31 @@ export async function POST(
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     if (!campaign.fb_campaign_id) return NextResponse.json({ error: 'No Facebook campaign ID' }, { status: 400 })
 
-    const pageToken = (campaign as any).connected_pages?.page_access_token
-    if (!pageToken) return NextResponse.json({ error: 'No page token found' }, { status: 400 })
+    // 1. Check real Facebook status using USER TOKEN
+    let fbStatus = null
+    try {
+      fbStatus = await getRealStatus(userToken, campaign.fb_campaign_id, campaign.fb_adset_id, campaign.fb_ad_id)
 
-    // Fetch fresh insights from Facebook
-    const insights = await getCampaignInsights(campaign.fb_campaign_id, pageToken)
+      // Sync DB status with Facebook reality
+      if (fbStatus.overall === 'ACTIVE' && campaign.status !== 'active') {
+        await supabase.from('ad_campaigns').update({ status: 'active' }).eq('id', params.id)
+      } else if (['PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(fbStatus.overall) && campaign.status !== 'paused') {
+        await supabase.from('ad_campaigns').update({ status: 'paused' }).eq('id', params.id)
+      }
+    } catch {}
+
+    // 2. Try to fetch insights using USER TOKEN (Marketing API needs user token)
+    let insights = null
+    try {
+      insights = await getCampaignInsights(campaign.fb_campaign_id, userToken)
+    } catch {}
+
     if (!insights) {
-      return NextResponse.json({ error: 'No insights available yet (campaign may be too new)' }, { status: 404 })
+      return NextResponse.json({
+        success: true,
+        warning: 'No insights available yet (campaign may be too new or paused)',
+        fbStatus,
+      })
     }
 
     // Parse engagement actions
@@ -97,7 +116,7 @@ export async function POST(
       .select()
       .single()
 
-    return NextResponse.json({ success: true, performance: perfSnap })
+    return NextResponse.json({ success: true, performance: perfSnap, fbStatus })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { updateCampaignStatus } from '@/lib/facebook'
+import { updateAllStatus } from '@/lib/facebook'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +14,7 @@ export async function POST(
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userToken = session.accessToken as string
 
     const { action } = await req.json() // 'pause' | 'resume'
     if (action !== 'pause' && action !== 'resume') {
@@ -28,7 +29,7 @@ export async function POST(
 
     // Get Facebook user ID
     const meRes = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${session.accessToken}`
+      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${userToken}`
     )
     const meData = await meRes.json()
     if (meData.error) throw new Error(meData.error.message)
@@ -41,10 +42,10 @@ export async function POST(
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    // Get campaign + page token (verify ownership)
+    // Get campaign (verify ownership)
     const { data: campaign } = await supabase
       .from('ad_campaigns')
-      .select(`*, connected_pages!page_id (page_access_token)`)
+      .select('*')
       .eq('id', params.id)
       .eq('user_id', user.id)
       .single()
@@ -52,12 +53,22 @@ export async function POST(
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     if (!campaign.fb_campaign_id) return NextResponse.json({ error: 'No Facebook campaign ID' }, { status: 400 })
 
-    const pageToken = (campaign as any).connected_pages?.page_access_token
-    if (!pageToken) return NextResponse.json({ error: 'No page token found' }, { status: 400 })
-
-    // Call Facebook API
+    // Update ALL 3 levels on Facebook using USER TOKEN (not page token)
     const fbStatus = action === 'pause' ? 'PAUSED' : 'ACTIVE'
-    await updateCampaignStatus(campaign.fb_campaign_id, pageToken, fbStatus)
+    const results = await updateAllStatus(
+      userToken,
+      campaign.fb_campaign_id,
+      campaign.fb_adset_id,
+      campaign.fb_ad_id,
+      fbStatus as 'ACTIVE' | 'PAUSED'
+    )
+
+    if (results.errors.length > 0 && !results.campaign) {
+      return NextResponse.json({
+        error: `ไม่สามารถอัปเดตสถานะได้: ${results.errors.join(', ')}`,
+        results,
+      }, { status: 400 })
+    }
 
     // Update DB status
     const dbStatus = action === 'pause' ? 'paused' : 'active'
@@ -66,7 +77,12 @@ export async function POST(
       .update({ status: dbStatus })
       .eq('id', params.id)
 
-    return NextResponse.json({ success: true, status: dbStatus })
+    return NextResponse.json({
+      success: true,
+      status: dbStatus,
+      fbStatus,
+      results,
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
