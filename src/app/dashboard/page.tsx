@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, RefreshCw } from 'lucide-react'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2 } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -120,6 +120,28 @@ export default function Dashboard() {
     }
   }
 
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  async function handleDelete(campaignId: string, campaignName: string) {
+    if (deleting) return
+    if (!confirm(`ลบแอด "${campaignName}" ?\n\nจะลบทั้งใน Facebook และระบบ ไม่สามารถกู้คืนได้`)) return
+    setDeleting(campaignId)
+    try {
+      const res = await fetch(`/api/ads/${campaignId}/delete`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        alert(`ลบไม่สำเร็จ: ${data.error || 'เกิดข้อผิดพลาด'}`)
+      } else {
+        setCampaigns(prev => prev.filter(c => c.id !== campaignId))
+        if (data.fbErrors) console.warn('FB delete warnings:', data.fbErrors)
+      }
+    } catch (e: any) {
+      alert(`ลบไม่สำเร็จ: ${e.message}`)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: BG, color: TEXT, fontFamily: "'Sarabun', sans-serif", position: 'relative' }}>
       {/* Grid BG */}
@@ -219,7 +241,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} />)}
+            {campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} onDelete={handleDelete} deleting={deleting} />)}
           </div>
         )}
       </div>
@@ -262,7 +284,7 @@ const fbStatusConfig: Record<string, { label: string; color: string; bg: string 
 }
 
 // ─── Campaign Card (with metrics + FB status + toggle) ────────
-function CampaignCard({ campaign: c, onToggle }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void }) {
+function CampaignCard({ campaign: c, onToggle, onDelete, deleting }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null }) {
   const isActive = c.status === 'active'
   const isPaused = c.status === 'paused'
   const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
@@ -330,6 +352,22 @@ function CampaignCard({ campaign: c, onToggle }: { campaign: any; onToggle: (id:
             }}
           >
             <Power size={15} />
+          </button>
+          {/* Delete button */}
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(c.id, c.campaign_name) }}
+            disabled={deleting === c.id}
+            title="ลบแอด"
+            style={{
+              width: 34, height: 34, borderRadius: 10, border: `1.5px solid rgba(220,38,38,0.2)`,
+              cursor: deleting === c.id ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: deleting === c.id ? '#fca5a5' : 'linear-gradient(145deg, #ffffff, #fff5f5)',
+              color: RED, opacity: deleting === c.id ? 0.6 : 1,
+              transition: 'all 0.18s',
+            }}
+          >
+            <Trash2 size={14} />
           </button>
           <a href={`/dashboard/campaign/${c.id}`} style={{ textDecoration: 'none' }}>
             <div style={{ width: 30, height: 30, background: 'linear-gradient(145deg, #ffffff, #e8eeff)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PRIMARY, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
