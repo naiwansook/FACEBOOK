@@ -132,11 +132,12 @@ export async function POST(req: Request) {
           status: 'PAUSED',
           buying_type: 'AUCTION',
           special_ad_categories: [],
+          is_adset_budget_sharing_enabled: false,
           access_token: userToken,
         }),
       })
       const d = await r.json()
-      if (d.error) return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${JSON.stringify(d.error)}` }, { status: 400 })
+      if (d.error) return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${d.error.error_user_msg || d.error.message}` }, { status: 400 })
       fbCampaignId = d.id
     } catch (e: any) {
       return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${e.message}` }, { status: 500 })
