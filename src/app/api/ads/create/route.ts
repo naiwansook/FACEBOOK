@@ -129,7 +129,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           name: campaignName,
           objective: 'OUTCOME_AWARENESS',
-          status: 'PAUSED',
+          status: 'ACTIVE',
           buying_type: 'AUCTION',
           special_ad_categories: [],
           is_adset_budget_sharing_enabled: false,
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
           },
           promoted_object: { page_id: pageId },
           access_token: userToken,
-          status: 'PAUSED',
+          status: 'ACTIVE',
         }),
       })
       const d = await r.json()
@@ -200,7 +200,7 @@ export async function POST(req: Request) {
           name: `${campaignName} - Ad`,
           adset_id: fbAdSetId,
           creative: { creative_id: creativeData.id },
-          status: 'PAUSED',
+          status: 'ACTIVE',
           access_token: userToken,
         }),
       })
