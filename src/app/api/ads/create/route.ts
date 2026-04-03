@@ -213,13 +213,17 @@ export async function POST(req: Request) {
     }
 
     // ── 9. Force-activate ทั้ง 3 ระดับ (safety net) ──────────
-    // Facebook อาจไม่เปิดทุกระดับทันทีแม้ส่ง status: ACTIVE ตอนสร้าง
-    // สั่งเปิดอีกรอบเพื่อให้แน่ใจว่าสวิตช์เปิดหมดทุกระดับ
+    // รอให้ Facebook สร้าง object เสร็จก่อน แล้วสั่งเปิดทั้งหมดอีกรอบ
+    // เพื่อให้แน่ใจว่าสวิตช์ Campaign + Ad Set + Ad เปิดหมดทุกระดับ
     try {
-      await updateAllStatus(userToken, fbCampaignId, fbAdSetId, fbAdId, 'ACTIVE')
+      await new Promise(r => setTimeout(r, 2000)) // รอ FB propagate
+      const activateResult = await updateAllStatus(userToken, fbCampaignId, fbAdSetId, fbAdId, 'ACTIVE')
+      if (activateResult.errors.length > 0) {
+        console.warn('[create] force-activate partial errors:', activateResult.errors)
+      }
+      console.log('[create] force-activate result:', JSON.stringify(activateResult))
     } catch (e: any) {
       console.warn('[create] force-activate warning:', e.message)
-      // ไม่ fail ทั้งหมด — แอดถูกสร้างแล้ว แค่อาจต้องเปิดเองอีกที
     }
 
     // ── 10. Save to Supabase ──────────────────────────────────

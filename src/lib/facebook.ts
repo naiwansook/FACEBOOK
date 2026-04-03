@@ -182,17 +182,35 @@ export async function updateCampaignStatus(
   accessToken: string,
   status: 'ACTIVE' | 'PAUSED'
 ) {
+  const params = new URLSearchParams({ status, access_token: accessToken })
   const res = await fetch(`${FB_API}/${campaignId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, access_token: accessToken }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
   })
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
   return data.success as boolean
 }
 
-/** เปิด/ปิด ทั้ง 3 ระดับ: Campaign + Ad Set + Ad */
+/** อัปเดตสถานะ object เดียว (ใช้ form-encoded ซึ่ง FB API ตอบรับดีกว่า JSON) */
+async function fbUpdateStatus(objectId: string, accessToken: string, status: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const params = new URLSearchParams({ status, access_token: accessToken })
+    const r = await fetch(`${FB_API}/${objectId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    })
+    const d = await r.json()
+    if (d.error) return { success: false, error: d.error.message }
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message }
+  }
+}
+
+/** เปิด/ปิด ทั้ง 3 ระดับ: Campaign → Ad Set → Ad (ตามลำดับ + delay) */
 export async function updateAllStatus(
   accessToken: string,
   fbCampaignId: string,
@@ -202,44 +220,29 @@ export async function updateAllStatus(
 ) {
   const results: { campaign?: boolean; adset?: boolean; ad?: boolean; errors: string[] } = { errors: [] }
 
-  // 1. Campaign
-  try {
-    const r = await fetch(`${FB_API}/${fbCampaignId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, access_token: accessToken }),
-    })
-    const d = await r.json()
-    if (d.error) results.errors.push(`Campaign: ${d.error.message}`)
-    else results.campaign = d.success
-  } catch (e: any) { results.errors.push(`Campaign: ${e.message}`) }
+  // 1. Campaign ก่อน (parent ต้องเปิดก่อน child)
+  const c = await fbUpdateStatus(fbCampaignId, accessToken, status)
+  results.campaign = c.success
+  if (!c.success && c.error) results.errors.push(`Campaign: ${c.error}`)
+
+  // รอให้ FB propagate สถานะ campaign ก่อนเปิด adset
+  await new Promise(r => setTimeout(r, 1500))
 
   // 2. Ad Set
   if (fbAdSetId) {
-    try {
-      const r = await fetch(`${FB_API}/${fbAdSetId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, access_token: accessToken }),
-      })
-      const d = await r.json()
-      if (d.error) results.errors.push(`AdSet: ${d.error.message}`)
-      else results.adset = d.success
-    } catch (e: any) { results.errors.push(`AdSet: ${e.message}`) }
+    const a = await fbUpdateStatus(fbAdSetId, accessToken, status)
+    results.adset = a.success
+    if (!a.success && a.error) results.errors.push(`AdSet: ${a.error}`)
+
+    // รอให้ FB propagate สถานะ adset ก่อนเปิด ad
+    await new Promise(r => setTimeout(r, 1500))
   }
 
   // 3. Ad
   if (fbAdId) {
-    try {
-      const r = await fetch(`${FB_API}/${fbAdId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, access_token: accessToken }),
-      })
-      const d = await r.json()
-      if (d.error) results.errors.push(`Ad: ${d.error.message}`)
-      else results.ad = d.success
-    } catch (e: any) { results.errors.push(`Ad: ${e.message}`) }
+    const a = await fbUpdateStatus(fbAdId, accessToken, status)
+    results.ad = a.success
+    if (!a.success && a.error) results.errors.push(`Ad: ${a.error}`)
   }
 
   return results
