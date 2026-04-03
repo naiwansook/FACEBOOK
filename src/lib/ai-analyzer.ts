@@ -79,12 +79,42 @@ export async function analyzeAdPerformance(metrics: AdMetrics): Promise<AIAnalys
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
+  const cleaned = text.replace(/```json|```/g, '').trim()
+
+  // Extract JSON object even if there's extra text
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('AI ไม่ได้ตอบเป็น JSON')
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(jsonMatch[0])
+  } catch {
+    // If JSON is truncated, try to fix common issues
+    let fixedJson = jsonMatch[0]
+    // Close unclosed strings and arrays
+    const openBrackets = (fixedJson.match(/\[/g) || []).length - (fixedJson.match(/\]/g) || []).length
+    const openBraces = (fixedJson.match(/\{/g) || []).length - (fixedJson.match(/\}/g) || []).length
+    if (fixedJson.endsWith('"')) fixedJson += ']'
+    for (let i = 0; i < openBrackets; i++) fixedJson += ']'
+    for (let i = 0; i < openBraces; i++) fixedJson += '}'
+    try {
+      parsed = JSON.parse(fixedJson)
+    } catch {
+      // Fallback result
+      parsed = {
+        recommendation: 'keep_running',
+        confidence: 0.5,
+        summary: 'ยังมีข้อมูลไม่เพียงพอ รอให้แอดวิ่งสัก 24-48 ชม. ก่อนวิเคราะห์',
+        reasoning: 'แอดเพิ่งเริ่มต้น ยังไม่มีข้อมูล performance เพียงพอ',
+        actionItems: ['รอให้แอดวิ่งอย่างน้อย 24 ชม.', 'กลับมาวิเคราะห์อีกครั้ง'],
+      }
+    }
+  }
 
   return {
     recommendation: parsed.recommendation,
