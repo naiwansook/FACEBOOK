@@ -157,7 +157,7 @@ export async function POST(req: Request) {
           start_time: startDate || new Date().toISOString(),
           end_time: endDate,
           billing_event: 'IMPRESSIONS',
-          optimization_goal: 'POST_ENGAGEMENT',
+          optimization_goal: 'ENGAGED_USERS',
           targeting: {
             age_min: 20,
             age_max: 65,
