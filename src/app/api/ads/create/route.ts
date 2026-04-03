@@ -131,7 +131,7 @@ export async function POST(req: Request) {
           objective: 'OUTCOME_ENGAGEMENT',
           status: 'PAUSED',
           buying_type: 'AUCTION',
-          special_ad_categories: ['NONE'],
+          special_ad_categories: [],
           access_token: userToken,
         }),
       })
