@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
+import { updateAllStatus } from '@/lib/facebook'
 
 export const dynamic = 'force-dynamic'
 
@@ -211,7 +212,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 9. Save to Supabase ───────────────────────────────────
+    // ── 9. Force-activate ทั้ง 3 ระดับ (safety net) ──────────
+    // Facebook อาจไม่เปิดทุกระดับทันทีแม้ส่ง status: ACTIVE ตอนสร้าง
+    // สั่งเปิดอีกรอบเพื่อให้แน่ใจว่าสวิตช์เปิดหมดทุกระดับ
+    try {
+      await updateAllStatus(userToken, fbCampaignId, fbAdSetId, fbAdId, 'ACTIVE')
+    } catch (e: any) {
+      console.warn('[create] force-activate warning:', e.message)
+      // ไม่ fail ทั้งหมด — แอดถูกสร้างแล้ว แค่อาจต้องเปิดเองอีกที
+    }
+
+    // ── 10. Save to Supabase ──────────────────────────────────
     const { data: campaign, error: campaignError } = await supabase
       .from('ad_campaigns')
       .insert({
