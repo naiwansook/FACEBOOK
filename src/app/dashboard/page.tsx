@@ -761,7 +761,7 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
               {/* Budget */}
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, color: MUTED, fontWeight: 700, display: 'block', marginBottom: 7 }}>งบต่อวัน (บาท) — ขั้นต่ำ ฿{MIN_BUDGET}</label>
-                <input type="number" value={budget} min={MIN_BUDGET} onChange={e => setBudget(Math.max(MIN_BUDGET, Number(e.target.value)))} style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} />
+                <input type="number" value={budget || ''} min={MIN_BUDGET} onChange={e => setBudget(Number(e.target.value) || 0)} style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} />
                 {budget < MIN_BUDGET && <p style={{ fontSize: 11, color: RED, margin: '5px 0 0', fontWeight: 700 }}>งบขั้นต่ำ ฿{MIN_BUDGET} (AI สร้าง 3 แบบ × ฿40 ขั้นต่ำ/แบบ)</p>}
               </div>
 
