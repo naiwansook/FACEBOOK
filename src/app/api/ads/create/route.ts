@@ -187,6 +187,9 @@ export async function POST(req: Request) {
       }]
     }
 
+    // Facebook requires Advantage audience flag
+    targeting.targeting_automation = { advantage_audience: 0 }
+
     // ── 9. Create Campaign ────────────────────────────────────
     let fbCampaignId: string
     try {

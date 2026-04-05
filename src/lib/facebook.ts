@@ -104,6 +104,7 @@ export async function createAdSet(
         flexible_spec: opts.targeting.interests?.length
           ? [{ interests: opts.targeting.interests }]
           : undefined,
+        targeting_automation: { advantage_audience: 0 },
       },
       promoted_object: { page_id: opts.pageId },
       access_token: pageToken,
