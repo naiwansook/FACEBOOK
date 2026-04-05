@@ -141,10 +141,19 @@ export async function POST(req: Request) {
     const createdVariants = []
     const variantErrors: string[] = []
 
-    for (const variant of testPlan.variants) {
+    // Facebook Thailand minimum daily budget is ~34 baht
+    const FB_MIN_BUDGET = 35
+    // Limit variants based on budget
+    const maxVariants = Math.floor(finalDailyBudget / FB_MIN_BUDGET)
+    const variantsToCreate = testPlan.variants.slice(0, Math.max(2, maxVariants))
+
+    for (const variant of variantsToCreate) {
       try {
-        const variantBudget = Math.round(finalDailyBudget * variant.budgetPercent / 100)
-        if (variantBudget < 20) continue // Facebook minimum
+        // Split budget equally if calculated share is too low
+        const calculatedBudget = Math.round(finalDailyBudget * variant.budgetPercent / 100)
+        const equalBudget = Math.round(finalDailyBudget / variantsToCreate.length)
+        const variantBudget = Math.max(calculatedBudget, equalBudget, FB_MIN_BUDGET)
+        if (variantBudget < FB_MIN_BUDGET) continue
 
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
@@ -168,8 +177,8 @@ export async function POST(req: Request) {
           startTime: startDate,
           endTime: endDateStr,
           targeting: {
-            ageMin: variant.targeting.ageMin,
-            ageMax: variant.targeting.ageMax,
+            ageMin: Math.max(20, variant.targeting.ageMin || 20),
+            ageMax: Math.min(65, variant.targeting.ageMax || 55),
             genders: variant.targeting.genders,
             geoLocations: variant.targeting.geoLocations || { countries: ['TH'] },
             interests: validInterests,
