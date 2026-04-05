@@ -7,7 +7,8 @@ export const authOptions = {
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope: 'ads_management,ads_read,pages_show_list,pages_read_engagement',
+          scope: 'ads_management,ads_read,pages_show_list,pages_read_engagement,pages_manage_ads,pages_read_user_content,pages_manage_metadata',
+          auth_type: 'rerequest',
           redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/facebook`,
         },
       },
