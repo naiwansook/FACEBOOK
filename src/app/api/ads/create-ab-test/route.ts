@@ -149,17 +149,20 @@ export async function POST(req: Request) {
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
         const userToken = session.accessToken as string
+        let fbCampaignId = ''
 
         // Create Facebook Campaign (use userToken like create/route.ts)
-        const fbCampaignId = await createCampaign(adAccountId, userToken, campaignName)
+        fbCampaignId = await createCampaign(adAccountId, userToken, campaignName)
 
         // Validate AI interests against Facebook API (get real IDs)
         const validInterests = variant.targeting.interests?.length
           ? await resolveInterests(variant.targeting.interests, userToken)
           : []
 
+        let fbAdSetId: string
+        try {
         // Create Ad Set with variant-specific targeting (use userToken)
-        const fbAdSetId = await createAdSet(adAccountId, userToken, fbCampaignId, {
+        fbAdSetId = await createAdSet(adAccountId, userToken, fbCampaignId, {
           name: `${variant.label} - Ad Set`,
           dailyBudget: variantBudget,
           startTime: startDate,
@@ -173,6 +176,11 @@ export async function POST(req: Request) {
           },
           pageId,
         })
+        } catch (adsetErr: any) {
+          // Rollback: delete orphaned campaign from Facebook
+          try { await fetch(`${FB}/${fbCampaignId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: session.accessToken }) }) } catch {}
+          throw adsetErr
+        }
 
         // Create Ad
         const fbAdId = await createAd(adAccountId, pageToken, fbAdSetId, {
