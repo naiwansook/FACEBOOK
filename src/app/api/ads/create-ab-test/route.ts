@@ -160,7 +160,7 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: campaignName,
-            objective: 'OUTCOME_ENGAGEMENT',
+            objective: 'OUTCOME_AWARENESS',
             status: 'ACTIVE',
             buying_type: 'AUCTION',
             special_ad_categories: [],
@@ -201,7 +201,7 @@ export async function POST(req: Request) {
           start_time: startDate,
           end_time: endDateStr,
           billing_event: 'IMPRESSIONS',
-          optimization_goal: 'ENGAGED_USERS',
+          optimization_goal: 'REACH',
           targeting,
           promoted_object: { page_id: pageId },
           access_token: userToken,
