@@ -529,8 +529,7 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
   async function handleSubmit() {
     if (!selectedPage || !selectedPost) return
     setSubmitting(true); setError('')
-    const endDate = new Date(); endDate.setDate(endDate.getDate() + days)
-    const res = await fetch('/api/ads/create', {
+    const res = await fetch('/api/ads/create-ab-test', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         postId: selectedPost.id, pageId: selectedPage.id,
@@ -538,13 +537,15 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
         pageCategory: selectedPage.category,
         postMessage: selectedPost.message,
         postImage: selectedPost.full_picture,
-        campaignName: `Boost - ${(selectedPost.message || selectedPost.id).slice(0, 40)}`,
-        dailyBudget: budget, startDate: new Date().toISOString(), endDate: endDate.toISOString(),
+        existingReactions: selectedPost.reactions?.summary?.total_count || 0,
+        existingComments: 0,
+        existingShares: selectedPost.shares?.count || 0,
+        dailyBudget: budget, days,
       }),
     })
     const d = await res.json(); setSubmitting(false)
     if (!res.ok || d.error) { setError(d.error || 'เกิดข้อผิดพลาด'); return }
-    setAiResult(d.aiTargeting)
+    setAiResult(d)
     setStep(4) // Show AI result
   }
 
@@ -620,8 +621,8 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
 
               {/* AI info */}
               <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 16 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: GREEN }}>🤖 AI จะเลือก targeting ให้อัตโนมัติ</span>
-                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, lineHeight: 1.6 }}>AI จะอ่านเนื้อหาโพสต์แล้วเลือกเป้าหมาย กลุ่มเป้าหมาย อายุ เพศ ความสนใจ ให้เหมาะสมที่สุด</div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: GREEN }}>🤖 AI จะสร้าง 3-4 แอดทดสอบอัตโนมัติ</span>
+                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, lineHeight: 1.6 }}>AI จะอ่านเนื้อหาโพสต์แล้วสร้างแอด 3-4 แบบที่ targeting ต่างกัน เพื่อทดสอบว่าแบบไหนได้ผลดีที่สุด</div>
               </div>
 
               {/* Budget */}
@@ -656,44 +657,51 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
 
               <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '15px', background: submitting ? '#a5b4fc' : 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', border: 'none', borderRadius: 15, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 16, fontWeight: 900, fontFamily: 'inherit', boxShadow: submitting ? 'none' : '0 7px 24px rgba(67,56,202,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, transition: 'all 0.2s' }}>
                 {submitting ? (
-                  <><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> AI กำลังวิเคราะห์ + สร้างแอด...</>
+                  <><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> AI กำลังสร้าง 3-4 แอดทดสอบ...</>
                 ) : (
-                  <><Zap size={18} /> ยิงแอดเลย! (AI เลือก targeting)</>
+                  <><Zap size={18} /> ยิงแอด! (AI สร้าง 3-4 แบบทดสอบ)</>
                 )}
               </button>
             </div>
           )}
 
-          {/* Step 4: AI Result */}
+          {/* Step 4: AI AB Test Result */}
           {step === 4 && aiResult && (
             <div>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <div style={{ fontSize: 48, marginBottom: 8 }}>✅</div>
-                <p style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>สร้างแอดสำเร็จ!</p>
-                <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>AI เลือก targeting ให้อัตโนมัติ</p>
+                <div style={{ fontSize: 48, marginBottom: 8 }}>🎯</div>
+                <p style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>AI สร้าง {aiResult.variants?.length || 0} แอดทดสอบ!</p>
+                <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>กำลังทดสอบเป้าหมายที่แตกต่างกัน</p>
               </div>
 
-              <div style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: `1.5px solid rgba(67,56,202,0.2)`, borderRadius: 16, padding: '16px 20px', marginBottom: 16 }}>
-                <p style={{ fontSize: 12, color: PRIMARY, fontWeight: 800, margin: '0 0 8px' }}>🤖 AI เลือกให้:</p>
-                <p style={{ fontSize: 13, margin: '0 0 10px', lineHeight: 1.6, fontWeight: 500 }}>{aiResult.reasoning}</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '4px 12px', borderRadius: 999 }}>
-                    อายุ {aiResult.targeting?.ageMin}-{aiResult.targeting?.ageMax} ปี
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '4px 12px', borderRadius: 999 }}>
-                    {aiResult.targeting?.genders?.length === 0 ? 'ทุกเพศ' : aiResult.targeting?.genders?.includes(1) ? 'ชาย' : 'หญิง'}
-                  </span>
-                  {aiResult.targeting?.interests?.map((int: any, i: number) => (
-                    <span key={i} style={{ fontSize: 11, fontWeight: 700, background: GREEN_L, color: GREEN, padding: '4px 12px', borderRadius: 999 }}>
-                      {int.name}
-                    </span>
-                  ))}
+              {/* AI Post Analysis */}
+              {aiResult.postAnalysis && (
+                <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 14 }}>
+                  <p style={{ fontSize: 12, color: GREEN, fontWeight: 800, margin: '0 0 4px' }}>🤖 AI วิเคราะห์โพสต์:</p>
+                  <p style={{ fontSize: 12, margin: 0, lineHeight: 1.6, fontWeight: 500, color: '#166534' }}>{aiResult.postAnalysis}</p>
                 </div>
+              )}
+
+              {/* Variants */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                {(aiResult.variants || []).map((v: any, i: number) => (
+                  <div key={i} style={{ background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, padding: '14px 16px', boxShadow: SHADOW_SM }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: TEXT }}>{v.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '3px 10px', borderRadius: 999 }}>฿{v.budget}/วัน</span>
+                    </div>
+                    <p style={{ fontSize: 11, color: MUTED, margin: 0, fontWeight: 600 }}>{v.strategy}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: 'linear-gradient(135deg, #eef2ff, #ede9fe)', border: `1.5px solid rgba(99,102,241,0.2)`, borderRadius: 13, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: PRIMARY, fontWeight: 700, textAlign: 'center' }}>
+                💡 ระบบจะเปรียบเทียบผลทุก 12 ชม. แล้วบอกว่าแบบไหนดี/ไม่ดี อัตโนมัติ
               </div>
 
               <button onClick={() => { onClose(); onSuccess() }}
                 style={{ width: '100%', padding: '15px', background: 'linear-gradient(135deg, #059669, #34d399)', color: 'white', border: 'none', borderRadius: 15, cursor: 'pointer', fontSize: 16, fontWeight: 900, fontFamily: 'inherit', boxShadow: '0 7px 24px rgba(5,150,105,0.4)' }}>
-                เสร็จสิ้น
+                ดูผลทดสอบ
               </button>
             </div>
           )}
