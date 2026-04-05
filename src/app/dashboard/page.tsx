@@ -686,10 +686,15 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
             <div>
               {pages.length === 0 ? <div style={{ textAlign: 'center', padding: '36px 0', color: MUTED, fontSize: 13, fontWeight: 600 }}>ไม่พบ Page</div> : pages.map((p: any) => (
                 <button key={p.id} onClick={() => { setSelectedPage(p); fetchPosts(p); setStep(2) }}
-                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_RAISED, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.18s' }}
+                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_RAISED, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.18s' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = BORDER2; e.currentTarget.style.background = PRIMARY_LIGHT }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f7ff)' }}>
-                  <span>📄 {p.name}</span><ChevronRight size={16} color={MUTED} />
+                  {p.picture?.data?.url ? <img src={p.picture.data.url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ fontSize: 20 }}>📄</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800 }}>{p.name}</div>
+                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>{p.category || ''}{p.fan_count ? ` • ${fmt(p.fan_count)} likes` : ''}</div>
+                  </div>
+                  <ChevronRight size={16} color={MUTED} />
                 </button>
               ))}
             </div>
@@ -710,7 +715,12 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
                       {p.full_picture && <img src={p.full_picture} alt="" style={{ width: 48, height: 48, borderRadius: 9, objectFit: 'cover', flexShrink: 0, border: `1px solid ${BORDER}` }} />}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, lineHeight: 1.55, fontWeight: 600 }}>{p.message || p.story || 'ไม่มีข้อความ'}</div>
-                        <div style={{ fontSize: 10, color: MUTED, marginTop: 5, fontWeight: 600 }}>{fmtDate(p.created_time)}</div>
+                        <div style={{ fontSize: 10, color: MUTED, marginTop: 5, fontWeight: 600, display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {fmtDate(p.created_time)}
+                          {p.reactions?.summary?.total_count > 0 && <span>❤️ {p.reactions.summary.total_count}</span>}
+                          {p.comments?.summary?.total_count > 0 && <span>💬 {p.comments.summary.total_count}</span>}
+                          {p.shares?.count > 0 && <span>🔄 {p.shares.count}</span>}
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -892,8 +902,12 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
               <p style={{ fontSize: 12, color: MUTED, marginBottom: 12, fontWeight: 600 }}>AI จะอ่านข้อมูลจากเพจและโพสต์ แล้วสร้าง 3-4 กลุ่มเป้าหมายทดสอบอัตโนมัติ</p>
               {pages.map((p: any) => (
                 <button key={p.id} onClick={() => { setSelectedPage(p); fetchPosts(p); setStep(2) }}
-                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f3ff)', border: `1.5px solid rgba(124,58,237,0.15)`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_SM }}>
-                  📄 {p.name}
+                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f3ff)', border: `1.5px solid rgba(124,58,237,0.15)`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_SM, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {p.picture?.data?.url ? <img src={p.picture.data.url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ fontSize: 20 }}>📄</span>}
+                  <div style={{ flex: 1 }}>
+                    <div>{p.name}</div>
+                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>{p.category || ''}{p.fan_count ? ` • ${fmt(p.fan_count)} likes` : ''}</div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -910,7 +924,12 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
                   {p.full_picture && <img src={p.full_picture} alt="" style={{ width: 48, height: 48, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, fontWeight: 600 }}>{p.message || p.story || 'ไม่มีข้อความ'}</div>
-                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4, fontWeight: 600 }}>{fmtDate(p.created_time)}{p.reactions?.summary?.total_count ? ` • ${p.reactions.summary.total_count} reactions` : ''}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4, fontWeight: 600, display: 'flex', gap: 10, alignItems: 'center' }}>
+                      {fmtDate(p.created_time)}
+                      {p.reactions?.summary?.total_count > 0 && <span>❤️ {p.reactions.summary.total_count}</span>}
+                      {p.comments?.summary?.total_count > 0 && <span>💬 {p.comments.summary.total_count}</span>}
+                      {p.shares?.count > 0 && <span>🔄 {p.shares.count}</span>}
+                    </div>
                   </div>
                 </button>
               ))}

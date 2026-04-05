@@ -12,8 +12,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ posts: [] })
     }
 
+    const fields = [
+      'id', 'message', 'story', 'full_picture', 'permalink_url',
+      'created_time', 'attachments',
+      'shares',
+      'reactions.summary(true)',
+      'comments.summary(true)',
+    ].join(',')
+
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${pageId}/published_posts?fields=id,message,story,full_picture,created_time&limit=20&access_token=${pageToken}`
+      `https://graph.facebook.com/v19.0/${pageId}/published_posts?fields=${fields}&limit=30&access_token=${pageToken}`
     )
     const data = await res.json()
 

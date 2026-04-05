@@ -11,17 +11,32 @@ export async function GET() {
       return NextResponse.json({ pages: [] })
     }
 
-    const res = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,picture.type(large)&access_token=${session.accessToken}`
-    )
-    const data = await res.json()
+    const FB = 'https://graph.facebook.com/v19.0'
+    const fields = 'id,name,access_token,picture.type(large),category,fan_count,followers_count'
+    const allPages: any[] = []
 
-    if (data.error) {
-      console.error('FB Pages Error:', data.error)
+    // First request
+    const firstRes = await fetch(
+      `${FB}/me/accounts?fields=${fields}&limit=100&access_token=${session.accessToken}`
+    )
+    const firstData = await firstRes.json()
+    if (firstData.error) {
+      console.error('FB Pages Error:', firstData.error)
       return NextResponse.json({ pages: [] })
     }
+    allPages.push(...(firstData.data || []))
 
-    return NextResponse.json({ pages: data.data || [] })
+    // Follow pagination if more pages exist
+    let nextCursor: string | undefined = firstData.paging?.next
+    while (nextCursor) {
+      const pageRes = await fetch(nextCursor)
+      const pageData = await pageRes.json()
+      if (pageData.error) break
+      allPages.push(...(pageData.data || []))
+      nextCursor = pageData.paging?.next
+    }
+
+    return NextResponse.json({ pages: allPages })
   } catch (err: any) {
     return NextResponse.json({ pages: [] })
   }
