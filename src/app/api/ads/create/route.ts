@@ -24,23 +24,20 @@ const GOAL_CONFIG: Record<string, {
   },
   messages: {
     objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'CONVERSATIONS',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
-    destination_type: 'MESSENGER',
     label: 'เพิ่มจำนวนข้อความ',
   },
   sales_messages: {
     objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'CONVERSATIONS',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
-    destination_type: 'MESSENGER',
     label: 'เพิ่มยอดขายผ่านข้อความ',
   },
   leads_messages: {
     objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'CONVERSATIONS',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
-    destination_type: 'MESSENGER',
     label: 'เก็บข้อมูลลูกค้าผ่านข้อความ',
   },
   traffic: {
