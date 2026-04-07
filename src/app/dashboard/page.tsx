@@ -310,19 +310,34 @@ export default function Dashboard() {
                         const isPaused = v.status === 'paused'
                         const fbLabel = v.fbStatus === 'ACTIVE' ? 'ACTIVE' : v.fbStatus === 'PAUSED' || v.fbStatus === 'CAMPAIGN_PAUSED' || v.fbStatus === 'ADSET_PAUSED' ? 'PAUSED' : v.fbStatus === 'PENDING_REVIEW' ? 'รอตรวจ' : v.fbStatus === 'IN_PROCESS' ? 'ประมวลผล' : null
                         const fbColor = v.fbStatus === 'ACTIVE' ? GREEN : v.fbStatus?.includes('PAUSED') ? YELLOW : '#2563eb'
+                        const start = v.startTime ? new Date(v.startTime) : new Date()
+                        const end = v.endTime ? new Date(v.endTime) : new Date()
+                        const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
+                        const totalBudget = (v.dailyBudget || 0) * totalDays
+                        const spendPct = totalBudget > 0 ? Math.min(100, (v.spend || 0) / totalBudget * 100) : 0
+                        const barColor = spendPct > 80 ? RED : spendPct > 50 ? YELLOW : GREEN
                         return (
                           <div key={v.id} style={{
                             background: isActive ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : isPaused ? '#fffbeb' : SURFACE2,
                             border: `1px solid ${isActive ? 'rgba(5,150,105,0.2)' : isPaused ? 'rgba(217,119,6,0.2)' : BORDER}`,
                             borderRadius: 12, padding: '10px 12px',
                           }}>
-                            <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? GREEN : isPaused ? YELLOW : TEXT, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {v.label || 'Variant'}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? GREEN : isPaused ? YELLOW : TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                {v.label || 'Variant'}
+                              </div>
+                              {fbLabel && <span style={{ fontSize: 9, fontWeight: 700, color: fbColor, background: fbColor + '15', padding: '1px 6px', borderRadius: 999, flexShrink: 0 }}>{fbLabel}</span>}
                             </div>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: TEXT, marginBottom: 2 }}>฿{v.dailyBudget}<span style={{ fontSize: 10, fontWeight: 600, color: MUTED }}>/วัน</span></div>
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
-                              {fbLabel && <span style={{ fontSize: 9, fontWeight: 700, color: fbColor, background: fbColor + '15', padding: '1px 6px', borderRadius: 999 }}>{fbLabel}</span>}
-                              {v.spend > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: MUTED, background: SURFACE2, padding: '1px 6px', borderRadius: 999 }}>ใช้ ฿{fmt(v.spend, 1)}</span>}
+                            <div style={{ fontSize: 16, fontWeight: 900, color: TEXT, marginBottom: 6 }}>฿{v.dailyBudget}<span style={{ fontSize: 10, fontWeight: 600, color: MUTED }}>/วัน</span></div>
+                            {/* Budget progress bar */}
+                            <div style={{ marginBottom: 5 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, marginBottom: 3 }}>
+                                <span style={{ color: MUTED, fontWeight: 600 }}>฿{fmt(v.spend || 0, 1)} / ฿{fmt(totalBudget, 0)}</span>
+                                <span style={{ color: barColor, fontWeight: 700 }}>{fmt(spendPct, 1)}%</span>
+                              </div>
+                              <div style={{ height: 5, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', borderRadius: 3, width: `${spendPct}%`, background: `linear-gradient(90deg, ${barColor}, ${barColor}99)`, transition: 'width 0.5s ease' }} />
+                              </div>
                             </div>
                             {v.impressions > 0 && (
                               <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>
