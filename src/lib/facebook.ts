@@ -83,12 +83,12 @@ export async function validateInterests(
 // Ad Creation
 // ============================================
 
-/** สร้าง Campaign */
+/** สร้าง Campaign — ใช้ OUTCOME_AWARENESS เป็น default เพราะ compatible กับ post boost */
 export async function createCampaign(
   adAccountId: string,
   pageToken: string,
   name: string,
-  objective: string = 'OUTCOME_ENGAGEMENT'
+  objective: string = 'OUTCOME_AWARENESS'
 ) {
   const res = await fetch(`${FB_API}/${adAccountId}/campaigns`, {
     method: 'POST',
@@ -97,6 +97,7 @@ export async function createCampaign(
       name,
       objective,
       status: 'ACTIVE',
+      buying_type: 'AUCTION',
       special_ad_categories: [],
       is_adset_budget_sharing_enabled: false,
       access_token: pageToken,
@@ -130,68 +131,42 @@ export async function createAdSet(
     validInterests = await validateInterests(pageToken, validInterests)
   }
 
+  // Targeting แบบเรียบง่าย — ไม่ใช้ targeting_automation เพราะ conflict กับบาง objective
+  const targetingObj: any = {
+    age_min: opts.targeting.ageMin || 20,
+    age_max: opts.targeting.ageMax || 65,
+    genders: opts.targeting.genders,
+    geo_locations: opts.targeting.geoLocations || { countries: ['TH'] },
+  }
+
+  // เพิ่ม interests ถ้ามี (validated แล้ว)
+  if (validInterests.length > 0) {
+    targetingObj.flexible_spec = [{ interests: validInterests }]
+  }
+
   const adsetBody: any = {
     name: opts.name,
     campaign_id: campaignId,
-    daily_budget: Math.round(opts.dailyBudget * 100), // convert to satang
+    daily_budget: Math.round(opts.dailyBudget * 100),
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     start_time: opts.startTime,
     end_time: opts.endTime,
-    billing_event: opts.billingEvent || 'IMPRESSIONS',
-    targeting: {
-      age_min: opts.targeting.ageMin,
-      age_max: opts.targeting.ageMax,
-      genders: opts.targeting.genders,
-      geo_locations: opts.targeting.geoLocations || { countries: ['TH'] },
-      flexible_spec: validInterests.length > 0
-        ? [{ interests: validInterests }]
-        : undefined,
-      targeting_automation: { advantage_audience: 1 },
-    },
+    billing_event: 'IMPRESSIONS',
+    optimization_goal: 'REACH',
+    targeting: targetingObj,
     promoted_object: { page_id: opts.pageId },
     access_token: pageToken,
     status: 'ACTIVE',
   }
 
-  if (opts.destinationType) {
-    adsetBody.destination_type = opts.destinationType
-  }
-
-  // Auto-detect working optimization_goal by trying multiple options
-  const goalsToTry = opts.optimizationGoal
-    ? [opts.optimizationGoal]
-    : [
-        'POST_ENGAGEMENT', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS',
-        'ENGAGED_USERS', 'CONVERSATIONS', 'THRUPLAY', 'LANDING_PAGE_VIEWS',
-        'AD_RECALL_LIFT', 'PAGE_LIKES',
-      ]
-
-  let lastError: any = null
-  for (const goal of goalsToTry) {
-    const body = { ...adsetBody, optimization_goal: goal }
-    const res = await fetch(`${FB_API}/${adAccountId}/adsets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
-
-    if (!data.error) {
-      console.log(`✅ AdSet created with optimization_goal: ${goal}`)
-      return data.id as string
-    }
-
-    // If error is about optimization_goal (subcode 2490408), try next
-    if (data.error.error_subcode === 2490408) {
-      lastError = data.error
-      continue
-    }
-
-    // Different error — throw immediately
-    throw new Error(data.error.error_user_msg || data.error.message)
-  }
-
-  throw new Error(lastError?.error_user_msg || lastError?.message || 'ไม่พบ optimization_goal ที่ใช้ได้')
+  const res = await fetch(`${FB_API}/${adAccountId}/adsets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(adsetBody),
+  })
+  const data = await res.json()
+  if (data.error) throw new Error(data.error.error_user_msg || data.error.message)
+  return data.id as string
 }
 
 /** สร้าง Ad Creative + Ad */

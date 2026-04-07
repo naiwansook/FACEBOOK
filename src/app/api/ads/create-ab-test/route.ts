@@ -6,7 +6,7 @@ import { generateTestVariants, type PostContext } from '@/lib/ai-analyzer'
 
 export const dynamic = 'force-dynamic'
 
-// All post-boost campaigns use OUTCOME_ENGAGEMENT — let FB pick optimization
+// All post-boost campaigns use OUTCOME_AWARENESS + REACH (proven working combo)
 
 export async function POST(req: Request) {
   try {
@@ -132,8 +132,8 @@ export async function POST(req: Request) {
 
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
-        // Create Facebook Campaign — always OUTCOME_ENGAGEMENT for post boost
-        const fbCampaignId = await createCampaign(adAccountId, pageToken, campaignName, 'OUTCOME_ENGAGEMENT')
+        // Create Facebook Campaign — OUTCOME_AWARENESS for post boost (proven working)
+        const fbCampaignId = await createCampaign(adAccountId, pageToken, campaignName, 'OUTCOME_AWARENESS')
 
         // Create Ad Set — don't send optimization_goal, let Facebook pick default
         const fbAdSetId = await createAdSet(adAccountId, pageToken, fbCampaignId, {

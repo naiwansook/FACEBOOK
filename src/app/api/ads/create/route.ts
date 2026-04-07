@@ -142,34 +142,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Supabase page error: ${pageError.message}` }, { status: 500 })
     }
 
-    // ── 8. Build Targeting (AI-driven) ─────────────────────────
-    // Use Advantage+ audience (advantage_audience: 1) — AI targeting
-    // becomes "suggestions" that Facebook can expand for better results.
-    // This is what Facebook's own Boost Post uses.
+    // ── 8. Build Targeting (AI-driven, simple format) ───────────
+    // ใช้ targeting แบบเรียบง่าย — เหมือนเวอร์ชันที่ work ก่อนหน้า
+    // ไม่ใช้ targeting_automation เพราะ conflict กับหลาย optimization_goal
     const targeting: any = {
-      age_min: aiTargeting.targeting.ageMin,
-      age_max: aiTargeting.targeting.ageMax,
+      age_min: aiTargeting.targeting.ageMin || 20,
+      age_max: aiTargeting.targeting.ageMax || 65,
       geo_locations: { countries: ['TH'] },
-      targeting_automation: { advantage_audience: 1 },
     }
 
-    if (aiTargeting.targeting.genders.length > 0) {
+    if (aiTargeting.targeting.genders && aiTargeting.targeting.genders.length > 0) {
       targeting.genders = aiTargeting.targeting.genders
     }
 
-    if (aiTargeting.targeting.interests && aiTargeting.targeting.interests.length > 0) {
-      const validInterests = await validateInterests(
-        userToken,
-        aiTargeting.targeting.interests.map((i: any) => ({ id: i.id, name: i.name }))
-      )
-      if (validInterests.length > 0) {
-        targeting.flexible_spec = [{
-          interests: validInterests,
-        }]
-      }
-    }
-
     // ── 9. Create Campaign ────────────────────────────────────
+    // ใช้ OUTCOME_AWARENESS เหมือนเวอร์ชันเดิมที่ work ได้ 100%
     let fbCampaignId: string
     try {
       const r = await fetch(`${FB}/${adAccountId}/campaigns`, {
@@ -177,8 +164,9 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: campaignName,
-          objective: 'OUTCOME_ENGAGEMENT',
+          objective: 'OUTCOME_AWARENESS',
           status: 'ACTIVE',
+          buying_type: 'AUCTION',
           special_ad_categories: [],
           is_adset_budget_sharing_enabled: false,
           access_token: userToken,
@@ -191,75 +179,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 10. Create Ad Set (auto-detect working optimization_goal) ──
-    let fbAdSetId: string = ''
-    const OPTIMIZATION_GOALS_TO_TRY = [
-      'POST_ENGAGEMENT', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS',
-      'ENGAGED_USERS', 'CONVERSATIONS', 'THRUPLAY', 'LANDING_PAGE_VIEWS',
-      'AD_RECALL_LIFT', 'PAGE_LIKES',
-    ]
+    // ── 10. Create Ad Set ─────────────────────────────────────
+    let fbAdSetId: string
     try {
       const dailyBudgetSatang = Math.round(Number(dailyBudget) * 100)
-      const baseAdsetBody: any = {
-        name: `${campaignName} - Ad Set`,
-        campaign_id: fbCampaignId,
-        daily_budget: dailyBudgetSatang,
-        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-        start_time: startDate || new Date().toISOString(),
-        end_time: endDate,
-        billing_event: 'IMPRESSIONS',
-        targeting,
-        promoted_object: { page_id: pageId },
-        access_token: userToken,
-        status: 'ACTIVE',
-      }
-
-      let lastError: any = null
-      let adsetCreated = false
-
-      for (const optGoal of OPTIMIZATION_GOALS_TO_TRY) {
-        const body = { ...baseAdsetBody, optimization_goal: optGoal }
-        const r = await fetch(`${FB}/${adAccountId}/adsets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        const d = await r.json()
-
-        if (!d.error) {
-          fbAdSetId = d.id
-          adsetCreated = true
-          console.log(`✅ AdSet created with optimization_goal: ${optGoal}`)
-          break
-        }
-
-        // If error is about optimization_goal, try next one
-        if (d.error.error_subcode === 2490408) {
-          lastError = d.error
-          continue
-        }
-
-        // Different error — stop trying
-        return NextResponse.json({
-          error: `สร้าง Ad Set ไม่ได้: ${d.error.error_user_msg || d.error.message} [${JSON.stringify(d.error)}]`
-        }, { status: 400 })
-      }
-
-      if (!adsetCreated) {
-        // All goals failed — also try without optimization_goal
-        const r = await fetch(`${FB}/${adAccountId}/adsets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(baseAdsetBody),
-        })
-        const d = await r.json()
-        if (d.error) {
-          return NextResponse.json({
-            error: `สร้าง Ad Set ไม่ได้ (ลองทุก optimization_goal แล้ว): ${lastError?.error_user_msg || lastError?.message} [tried: ${OPTIMIZATION_GOALS_TO_TRY.join(', ')}]`
-          }, { status: 400 })
-        }
-        fbAdSetId = d.id
-      }
+      const r = await fetch(`${FB}/${adAccountId}/adsets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `${campaignName} - Ad Set`,
+          campaign_id: fbCampaignId,
+          daily_budget: dailyBudgetSatang,
+          bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+          start_time: startDate || new Date().toISOString(),
+          end_time: endDate,
+          billing_event: 'IMPRESSIONS',
+          optimization_goal: 'REACH',
+          targeting,
+          promoted_object: { page_id: pageId },
+          access_token: userToken,
+          status: 'ACTIVE',
+        }),
+      })
+      const d = await r.json()
+      if (d.error) return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${d.error.error_user_msg || d.error.message} [${JSON.stringify(d.error)}]` }, { status: 400 })
+      fbAdSetId = d.id
     } catch (e: any) {
       return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${e.message}` }, { status: 500 })
     }
