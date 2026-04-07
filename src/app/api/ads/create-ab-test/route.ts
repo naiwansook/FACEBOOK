@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { postId, pageId, pageToken, pageName, pageCategory, postMessage, postImage, dailyBudget, days, existingReactions, existingComments, existingShares } = body
+    const { postId, pageId, pageToken, pageName, pageCategory, postMessage, postImage, dailyBudget, days, existingReactions, existingComments, existingShares, goal } = body
 
     if (!postId || !pageId || !pageToken) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 })
@@ -138,6 +138,18 @@ export async function POST(req: Request) {
     endDate.setDate(endDate.getDate() + finalDays)
     const endDateStr = endDate.toISOString()
 
+    // Goal → Facebook objective mapping
+    const GOAL_MAP: Record<string, { objective: string; optimization_goal: string; destination_type?: string }> = {
+      auto_engagement: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS' },
+      messages: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', destination_type: 'MESSENGER' },
+      sales_messages: { objective: 'OUTCOME_SALES', optimization_goal: 'CONVERSATIONS', destination_type: 'MESSENGER' },
+      leads_messages: { objective: 'OUTCOME_LEADS', optimization_goal: 'LEAD_GENERATION', destination_type: 'MESSENGER' },
+      traffic: { objective: 'OUTCOME_TRAFFIC', optimization_goal: 'LINK_CLICKS' },
+      calls: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'QUALITY_CALL' },
+      reach: { objective: 'OUTCOME_AWARENESS', optimization_goal: 'REACH' },
+    }
+    const goalCfg = GOAL_MAP[goal] || GOAL_MAP.reach
+
     const createdVariants = []
     const variantErrors: string[] = []
     const userToken = session.accessToken as string
@@ -160,7 +172,7 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: campaignName,
-            objective: 'OUTCOME_AWARENESS',
+            objective: goalCfg.objective,
             status: 'ACTIVE',
             buying_type: 'AUCTION',
             special_ad_categories: [],
@@ -201,11 +213,14 @@ export async function POST(req: Request) {
           start_time: startDate,
           end_time: endDateStr,
           billing_event: 'IMPRESSIONS',
-          optimization_goal: 'REACH',
+          optimization_goal: goalCfg.optimization_goal,
           targeting,
           promoted_object: { page_id: pageId },
           access_token: userToken,
           status: 'ACTIVE',
+        }
+        if (goalCfg.destination_type) {
+          adsetBody.destination_type = goalCfg.destination_type
         }
         const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
           method: 'POST',
@@ -264,6 +279,7 @@ export async function POST(req: Request) {
             start_time: startDate,
             end_time: endDateStr,
             status: 'active',
+            goal: goal || 'reach',
             test_group_id: testGroup.id,
             variant_label: variant.label,
             variant_strategy: {

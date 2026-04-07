@@ -177,23 +177,6 @@ export default function Dashboard() {
     }
   }
 
-  const [cleaning, setCleaning] = useState(false)
-  async function handleCleanup() {
-    if (cleaning) return
-    setCleaning(true)
-    try {
-      const res = await fetch('/api/ads/cleanup', { method: 'POST' })
-      const data = await res.json()
-      if (data.success) {
-        alert(`ลบ campaigns ค้างแล้ว ${data.deleted?.length || 0} รายการ`)
-        loadAll()
-      } else {
-        alert(`ไม่สำเร็จ: ${data.error}`)
-      }
-    } catch (e: any) { alert(e.message) }
-    finally { setCleaning(false) }
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: BG, color: TEXT, fontFamily: "'Sarabun', sans-serif", position: 'relative' }}>
       {/* Grid BG */}
@@ -239,9 +222,6 @@ export default function Dashboard() {
           <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '9px 18px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7 }}>
             <Plus size={15} /> ยิงแอดใหม่
           </button>
-          <button onClick={handleCleanup} disabled={cleaning} style={{ ...btnGhost, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: RED, borderColor: 'rgba(220,38,38,0.2)' }}>
-            <Trash2 size={13} /> {cleaning ? 'กำลังลบ...' : 'ล้าง FB ค้าง'}
-          </button>
           <button onClick={() => signOut({ callbackUrl: '/login' })} style={{ ...btnGhost, padding: '8px 11px' }}><LogOut size={15} /></button>
         </div>
       </div>
@@ -277,51 +257,66 @@ export default function Dashboard() {
 
         {/* Pages */}
         {pages.length > 0 && (
-          <div style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, color: MUTED }}>📄 เพจที่จัดการ ({pages.length})</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(pages.length, 3)}, 1fr)`, gap: 10 }}>
-              {pages.map((p: any) => (
-                <div key={p.id} style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 14, padding: '12px 14px', boxShadow: SHADOW_SM, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {p.picture?.data?.url ? (
-                    <img src={p.picture.data.url} alt="" style={{ width: 36, height: 36, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg, #4338ca, #818cf8)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{(p.name || '?')[0]}</div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>
-                      {p.category || ''}{p.fan_count ? ` • ${fmt(p.fan_count)} likes` : ''}
+          <div style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 14, padding: '11px 18px', marginBottom: 20, boxShadow: SHADOW_SM, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <span style={{ fontSize: 12, color: MUTED, fontWeight: 700 }}>📄 Pages:</span>
+            {pages.map((p: any) => (
+              <span key={p.id} style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', color: PRIMARY, padding: '3px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid rgba(67,56,202,0.2)` }}>{p.name}</span>
+            ))}
+          </div>
+        )}
+
+        {/* ── AB Tests ── */}
+        {abTests.length > 0 && (
+          <div style={{ marginBottom: 22 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={16} color={PRIMARY} /> AI A/B Tests
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {abTests.map((t: any) => (
+                <button key={t.id} onClick={() => setShowABView(t.id)}
+                  style={{ width: '100%', background: 'linear-gradient(145deg, #f5f3ff, #ede9fe)', border: `1.5px solid rgba(124,58,237,0.25)`, borderRadius: 16, padding: '16px 20px', cursor: 'pointer', textAlign: 'left', color: TEXT, fontFamily: 'inherit', boxShadow: SHADOW_SM, transition: 'all 0.18s' }}
+                  onMouseEnter={e => { e.currentTarget.style.boxShadow = SHADOW_MD }}
+                  onMouseLeave={e => { e.currentTarget.style.boxShadow = SHADOW_SM }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <BarChart3 size={15} color="#7c3aed" />
+                        A/B Test — {(t.post_message || t.fb_post_id || '').slice(0, 50)}
+                      </div>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 600 }}>
+                        <span style={{ marginRight: 14 }}>💰 ฿{t.total_daily_budget}/วัน</span>
+                        <span style={{ marginRight: 14 }}>{t.variant_count || 0} variants</span>
+                        <span>{fmtDate(t.created_at)}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: t.status === 'running' ? GREEN : MUTED, background: t.status === 'running' ? GREEN_L : '#f1f5f9', padding: '3px 12px', borderRadius: 999 }}>
+                        {t.status === 'running' ? '● กำลังทดสอบ' : t.status === 'completed' ? '✅ เสร็จ' : t.status}
+                      </span>
+                      <ChevronRight size={14} color={MUTED} />
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* ── Main Ad List (grouped by AB Test / Post) ── */}
+        {/* ── Campaign List ── */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 72, color: MUTED }}>
             <div style={{ fontSize: 38, marginBottom: 14, opacity: 0.5 }}>⏳</div>
             <p style={{ fontSize: 14, fontWeight: 600 }}>กำลังโหลด...</p>
           </div>
-        ) : abTests.length === 0 && campaigns.length === 0 ? (
+        ) : campaigns.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 64, background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 22, boxShadow: SHADOW_MD }}>
             <div style={{ fontSize: 56, marginBottom: 16 }}>📢</div>
             <p style={{ color: MUTED, marginBottom: 24, fontSize: 15, fontWeight: 600 }}>ยังไม่มีแอดใดๆ</p>
-            <button onClick={() => setShowABModal(true)} style={{ ...btnPrimary, padding: '13px 32px', fontSize: 14 }}>+ สร้างแอดแรกเลย</button>
+            <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '13px 32px', fontSize: 14 }}>+ สร้างแอดแรกเลย</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* AB Test Groups — each is a post with 3-4 variants */}
-            {abTests.map((t: any) => (
-              <AdGroupCard key={t.id} test={t} onOpen={() => setShowABView(t.id)} />
-            ))}
-
-            {/* Standalone campaigns (not part of AB test) */}
-            {campaigns.filter((c: any) => !c.test_group_id).map((c: any) => (
-              <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} onDelete={handleDelete} deleting={deleting} onApply={handleApplyRecommendation} applying={applying} />
-            ))}
+            {campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} onDelete={handleDelete} deleting={deleting} onApply={handleApplyRecommendation} applying={applying} />)}
           </div>
         )}
       </div>
@@ -369,6 +364,7 @@ const fbStatusConfig: Record<string, { label: string; color: string; bg: string 
 function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, applying }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null; onApply: (id: string) => void; applying: string | null }) {
   const isActive = c.status === 'active'
   const isPaused = c.status === 'paused'
+  const campaignGoal = c.goal ? goalById(c.goal) : null
   const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
   const statusBg = isActive ? GREEN_L : isPaused ? YELLOW_L : '#f1f5f9'
   const statusLabel = isActive ? '● กำลังวิ่ง' : isPaused ? '⏸ หยุด' : c.status
@@ -395,8 +391,9 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, appl
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
             📌 {c.campaign_name}
           </div>
-          <div style={{ fontSize: 11, color: MUTED, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 11, color: MUTED, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, color: GREEN, background: GREEN_L, padding: '2px 10px', borderRadius: 999 }}>฿{fmt(c.daily_budget)}/วัน</span>
+            {campaignGoal && <span style={{ fontWeight: 700, color: campaignGoal.color, background: campaignGoal.bg, padding: '2px 10px', borderRadius: 999 }}>{campaignGoal.icon} {campaignGoal.label}</span>}
             <span>{fmtDate(c.start_time)} — {fmtDate(c.end_time)}</span>
           </div>
         </a>
@@ -475,15 +472,9 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, appl
         </div>
       </div>
 
-      {/* Metrics row */}
+      {/* Metrics row — goal-specific */}
       {perf ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-          <MetricPill label="Impressions" value={fmt(perf.impressions)} icon="👁️" />
-          <MetricPill label="Reach" value={fmt(perf.reach)} icon="👥" />
-          <MetricPill label="Clicks" value={fmt(perf.clicks)} icon="🖱️" />
-          <MetricPill label="CTR" value={`${fmt(perf.ctr, 2)}%`} icon="📊" color={perf.ctr >= 1.5 ? GREEN : perf.ctr >= 0.8 ? YELLOW : RED} />
-          <MetricPill label="CPC" value={`฿${fmt(perf.cpc, 2)}`} icon="💸" color={perf.cpc > 0 && perf.cpc <= 5 ? GREEN : perf.cpc <= 15 ? YELLOW : RED} />
-        </div>
+        <GoalMetrics perf={perf} goal={campaignGoal} />
       ) : (
         <div style={{ background: SURFACE2, borderRadius: 10, padding: '10px 14px', textAlign: 'center', fontSize: 12, color: MUTED, fontWeight: 600 }}>
           ⏳ ยังไม่มีข้อมูล performance — กดเข้าไปซิงค์ข้อมูลได้เลย
@@ -539,129 +530,40 @@ function MetricPill({ label, value, icon, color }: { label: string; value: strin
   )
 }
 
-// ─── Ad Group Card (grouped by post) ──────────────────────────
-function AdGroupCard({ test, onOpen }: { test: any; onOpen: () => void }) {
-  const isRunning = test.status === 'running'
-  const totalBudget = test.total_daily_budget * (test.duration_days || 7)
-  const totalSpend = test.totals?.spend || 0
-  const spendPercent = totalBudget > 0 ? Math.min(100, totalSpend / totalBudget * 100) : 0
-
+// ─── Goal-specific Metrics ────────────────────────────────────
+function GoalMetrics({ perf, goal }: { perf: any; goal: any }) {
+  const metricKeys = goal?.metrics || ['impressions', 'reach', 'clicks', 'ctr', 'cpc']
+  const mm: Record<string, { label: string; icon: string; value: string; color?: string }> = {
+    impressions: { label: 'Impressions', icon: '👁️', value: fmt(perf.impressions) },
+    reach: { label: 'Reach', icon: '👥', value: fmt(perf.reach) },
+    clicks: { label: 'Clicks', icon: '🖱️', value: fmt(perf.clicks) },
+    ctr: { label: 'CTR', icon: '📊', value: `${fmt(perf.ctr, 2)}%`, color: perf.ctr >= 1.5 ? GREEN : perf.ctr >= 0.8 ? YELLOW : RED },
+    cpc: { label: 'CPC', icon: '💸', value: `฿${fmt(perf.cpc, 2)}`, color: perf.cpc > 0 && perf.cpc <= 5 ? GREEN : perf.cpc <= 15 ? YELLOW : RED },
+    cpm: { label: 'CPM', icon: '💰', value: `฿${fmt(perf.cpm, 2)}` },
+    spend: { label: 'Spend', icon: '💵', value: `฿${fmt(perf.spend, 2)}` },
+    engagement: { label: 'Engagement', icon: '❤️', value: fmt(perf.engagement || 0) },
+    messages: { label: 'Messages', icon: '💬', value: fmt(perf.messages || 0) },
+    frequency: { label: 'Frequency', icon: '🔁', value: fmt(perf.frequency, 2) },
+  }
+  const metrics = metricKeys.map((k: string) => mm[k]).filter(Boolean)
   return (
-    <div
-      onClick={onOpen}
-      style={{
-        background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 20,
-        padding: '20px 24px', boxShadow: SHADOW_RAISED, cursor: 'pointer',
-        transition: 'all 0.2s',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 10px 36px rgba(67,56,202,0.18)'; e.currentTarget.style.transform = 'translateY(-3px)' }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = SHADOW_RAISED; e.currentTarget.style.transform = 'translateY(0)' }}
-    >
-      {/* Row 1: Page name + Status */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #4338ca, #818cf8)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'white', fontWeight: 800, flexShrink: 0 }}>
-            {(test.page_name || '?')[0]}
-          </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: PRIMARY }}>{test.page_name || 'ไม่ทราบเพจ'}</div>
-            <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>{fmtDate(test.created_at)}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            fontSize: 11, fontWeight: 800, padding: '4px 13px', borderRadius: 999,
-            color: isRunning ? GREEN : test.status === 'completed' ? '#2563eb' : MUTED,
-            background: isRunning ? GREEN_L : test.status === 'completed' ? '#dbeafe' : '#f1f5f9',
-            border: `1px solid ${isRunning ? GREEN : test.status === 'completed' ? '#2563eb' : MUTED}30`,
-          }}>
-            {isRunning ? '● กำลังวิ่ง' : test.status === 'completed' ? '✅ เสร็จ' : test.status === 'evaluating' ? '🔍 ประเมิน' : test.status}
-          </span>
-          <div style={{ width: 28, height: 28, background: 'linear-gradient(145deg, #ffffff, #e8eeff)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PRIMARY, border: `1px solid ${BORDER}` }}>
-            <ChevronRight size={14} />
-          </div>
-        </div>
-      </div>
-
-      {/* Row 2: Post content */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
-        {test.post_image && (
-          <img src={test.post_image} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: 'cover', flexShrink: 0, border: `1.5px solid ${BORDER}` }} />
-        )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontSize: 13, fontWeight: 600, margin: '0 0 6px', lineHeight: 1.5, color: TEXT,
-            overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
-            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
-          }}>
-            {test.post_message || test.fb_post_id || 'ไม่มีข้อความ'}
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: MUTED, fontWeight: 600 }}>
-            <span style={{ background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', color: '#7c3aed', padding: '2px 10px', borderRadius: 999, fontWeight: 800, border: '1px solid rgba(124,58,237,0.2)' }}>
-              {test.variant_count || 0} แบบทดสอบ
-            </span>
-            <span>฿{fmt(test.total_daily_budget)}/วัน</span>
-            <span>{test.duration_days} วัน</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Budget progress */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
-          <span style={{ color: MUTED, fontWeight: 600 }}>ใช้จ่าย ฿{fmt(totalSpend, 2)} / ฿{fmt(totalBudget, 0)}</span>
-          <span style={{ color: spendPercent > 80 ? RED : spendPercent > 50 ? YELLOW : GREEN, fontWeight: 700 }}>{fmt(spendPercent, 1)}%</span>
-        </div>
-        <div style={{ height: 6, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', borderRadius: 3,
-            width: `${spendPercent}%`,
-            background: spendPercent > 80 ? `linear-gradient(90deg, ${RED}, #f87171)` : spendPercent > 50 ? `linear-gradient(90deg, ${YELLOW}, #fbbf24)` : `linear-gradient(90deg, ${GREEN}, #34d399)`,
-            transition: 'width 0.5s ease',
-          }} />
-        </div>
-      </div>
-
-      {/* Row 4: Performance summary */}
-      {(test.totals?.impressions > 0 || test.totals?.reach > 0) ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-          <MetricPill label="Impressions" value={fmt(test.totals.impressions)} icon="👁️" />
-          <MetricPill label="Reach" value={fmt(test.totals.reach)} icon="👥" />
-          <MetricPill label="Clicks" value={fmt(test.totals.clicks)} icon="🖱️" />
-          <MetricPill label="ใช้ไป" value={`฿${fmt(test.totals.spend, 2)}`} icon="💸" />
-        </div>
-      ) : (
-        <div style={{ background: SURFACE2, borderRadius: 10, padding: '10px 14px', textAlign: 'center', fontSize: 12, color: MUTED, fontWeight: 600 }}>
-          ⏳ ยังไม่มีข้อมูล — กดเข้าไปดูรายละเอียดแต่ละแบบทดสอบ
-        </div>
-      )}
-
-      {/* Row 5: Variant mini badges */}
-      {test.variants && test.variants.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-          {test.variants.map((v: any) => (
-            <span key={v.id} style={{
-              fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
-              background: v.status === 'active' ? GREEN_L : v.status === 'paused' ? YELLOW_L : '#f1f5f9',
-              color: v.status === 'active' ? GREEN : v.status === 'paused' ? YELLOW : MUTED,
-              border: `1px solid ${v.status === 'active' ? GREEN : v.status === 'paused' ? YELLOW : MUTED}25`,
-            }}>
-              {v.variant_label || v.campaign_name}
-              {v.perf?.spend ? ` • ฿${fmt(v.perf.spend, 1)}` : ''}
-            </span>
-          ))}
-        </div>
-      )}
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(metrics.length, 5)}, 1fr)`, gap: 8 }}>
+      {metrics.map((m: any) => <MetricPill key={m.label} label={m.label} value={m.value} icon={m.icon} color={m.color} />)}
     </div>
   )
 }
 
 // ─── Goal config ───────────────────────────────────────────────
 const GOALS = [
-  { id: 'messages', icon: '💬', label: 'ลูกค้าทักมา', desc: 'เพิ่มข้อความใน Messenger', color: '#2563eb', bg: '#dbeafe' },
-  { id: 'traffic', icon: '🏪', label: 'มาที่ร้าน/เว็บ', desc: 'เพิ่มคนคลิกเข้ามา', color: '#059669', bg: '#d1fae5' },
-  { id: 'reach', icon: '📢', label: 'เข้าถึงคนมากสุด', desc: 'กระจายให้คนเห็นมากที่สุด', color: '#7c3aed', bg: '#f3e8ff' },
+  { id: 'auto_engagement', icon: '🤖', label: 'อัตโนมัติ', desc: 'เพิ่มการมีส่วนร่วมอัตโนมัติ', color: '#4338ca', bg: '#eef2ff', metrics: ['impressions', 'engagement', 'clicks', 'ctr'] },
+  { id: 'messages', icon: '💬', label: 'เพิ่มข้อความ', desc: 'ให้ลูกค้าทักมาใน Messenger', color: '#2563eb', bg: '#dbeafe', metrics: ['messages', 'clicks', 'cpc', 'ctr'] },
+  { id: 'sales_messages', icon: '🛒', label: 'ยอดขายผ่านแชท', desc: 'เพิ่มยอดการซื้อผ่านข้อความ', color: '#dc2626', bg: '#fef2f2', metrics: ['messages', 'clicks', 'spend', 'cpc'] },
+  { id: 'leads_messages', icon: '📋', label: 'ข้อมูลลูกค้า', desc: 'เก็บข้อมูลลูกค้าผ่าน Messenger', color: '#ea580c', bg: '#fff7ed', metrics: ['messages', 'clicks', 'cpc', 'ctr'] },
+  { id: 'traffic', icon: '🌐', label: 'ผู้เยี่ยมชมเว็บ', desc: 'เพิ่มคนคลิกเข้าเว็บไซต์', color: '#059669', bg: '#d1fae5', metrics: ['clicks', 'ctr', 'cpc', 'impressions'] },
+  { id: 'calls', icon: '📞', label: 'เพิ่มการโทร', desc: 'ให้คนโทรหาธุรกิจคุณ', color: '#0891b2', bg: '#ecfeff', metrics: ['clicks', 'reach', 'cpc', 'impressions'] },
+  { id: 'reach', icon: '📢', label: 'เข้าถึงมากสุด', desc: 'กระจายให้คนเห็นมากที่สุด', color: '#7c3aed', bg: '#f3e8ff', metrics: ['impressions', 'reach', 'cpm', 'frequency'] },
 ]
+const goalById = (id: string) => GOALS.find(g => g.id === id) || GOALS[0]
 
 const INTEREST_PRESETS = [
   { id: '6003139266461', name: 'อาหาร (Food & dining)' },
@@ -682,9 +584,9 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
   const [selectedPage, setSelectedPage] = useState<any>(null)
   const [posts, setPosts] = useState<any[]>([])
   const [selectedPost, setSelectedPost] = useState<any>(null)
-  const MIN_BUDGET = 120 // 3 variants × 40 baht minimum
-  const [budget, setBudget] = useState(MIN_BUDGET)
+  const [budget, setBudget] = useState(100)
   const [days, setDays] = useState(7)
+  const [selectedGoal, setSelectedGoal] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loadingPosts, setLoadingPosts] = useState(false)
   const [error, setError] = useState('')
@@ -704,7 +606,8 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
   async function handleSubmit() {
     if (!selectedPage || !selectedPost) return
     setSubmitting(true); setError('')
-    const res = await fetch('/api/ads/create-ab-test', {
+    const endDate = new Date(); endDate.setDate(endDate.getDate() + days)
+    const res = await fetch('/api/ads/create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         postId: selectedPost.id, pageId: selectedPage.id,
@@ -712,20 +615,19 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
         pageCategory: selectedPage.category,
         postMessage: selectedPost.message,
         postImage: selectedPost.full_picture,
-        existingReactions: selectedPost.reactions?.summary?.total_count || 0,
-        existingComments: 0,
-        existingShares: selectedPost.shares?.count || 0,
-        dailyBudget: budget, days,
+        campaignName: `Boost - ${(selectedPost.message || selectedPost.id).slice(0, 40)}`,
+        dailyBudget: budget, startDate: new Date().toISOString(), endDate: endDate.toISOString(),
+        goal: selectedGoal || undefined,
       }),
     })
     const d = await res.json(); setSubmitting(false)
     if (!res.ok || d.error) { setError(d.error || 'เกิดข้อผิดพลาด'); return }
-    setAiResult(d)
-    setStep(4) // Show AI result
+    setAiResult(d.aiTargeting)
+    setStep(5) // Show AI result
   }
 
-  const totalSteps = 4
-  const steps = ['เลือก Page', 'เลือกโพสต์', 'งบ & ยิงแอด', 'AI สร้างแอดแล้ว!']
+  const totalSteps = 5
+  const steps = ['เลือก Page', 'เลือกโพสต์', 'เป้าหมาย', 'งบ & ยิงแอด', 'AI สร้างแอดแล้ว!']
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 14px', background: SURFACE2, border: `1.5px solid ${BORDER}`, borderRadius: 10, color: TEXT, fontSize: 14, fontWeight: 700, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }
 
   return (
@@ -752,15 +654,10 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
             <div>
               {pages.length === 0 ? <div style={{ textAlign: 'center', padding: '36px 0', color: MUTED, fontSize: 13, fontWeight: 600 }}>ไม่พบ Page</div> : pages.map((p: any) => (
                 <button key={p.id} onClick={() => { setSelectedPage(p); fetchPosts(p); setStep(2) }}
-                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_RAISED, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.18s' }}
+                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_RAISED, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.18s' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = BORDER2; e.currentTarget.style.background = PRIMARY_LIGHT }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f7ff)' }}>
-                  {p.picture?.data?.url ? <img src={p.picture.data.url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ fontSize: 20 }}>📄</span>}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800 }}>{p.name}</div>
-                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>{p.category || ''}{p.fan_count ? ` • ${fmt(p.fan_count)} likes` : ''}</div>
-                  </div>
-                  <ChevronRight size={16} color={MUTED} />
+                  <span>📄 {p.name}</span><ChevronRight size={16} color={MUTED} />
                 </button>
               ))}
             </div>
@@ -781,22 +678,45 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
                       {p.full_picture && <img src={p.full_picture} alt="" style={{ width: 48, height: 48, borderRadius: 9, objectFit: 'cover', flexShrink: 0, border: `1px solid ${BORDER}` }} />}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, lineHeight: 1.55, fontWeight: 600 }}>{p.message || p.story || 'ไม่มีข้อความ'}</div>
-                        <div style={{ fontSize: 10, color: MUTED, marginTop: 5, fontWeight: 600, display: 'flex', gap: 10, alignItems: 'center' }}>
-                          {fmtDate(p.created_time)}
-                          {p.reactions?.summary?.total_count > 0 && <span>❤️ {p.reactions.summary.total_count}</span>}
-                          {p.comments?.summary?.total_count > 0 && <span>💬 {p.comments.summary.total_count}</span>}
-                          {p.shares?.count > 0 && <span>🔄 {p.shares.count}</span>}
-                        </div>
+                        <div style={{ fontSize: 10, color: MUTED, marginTop: 5, fontWeight: 600 }}>{fmtDate(p.created_time)}</div>
                       </div>
                     </button>
                   ))}
             </div>
           )}
 
-          {/* Step 3: Budget & Submit */}
+          {/* Step 3: Goal Selection */}
           {step === 3 && (
             <div>
               <button onClick={() => setStep(2)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
+              <p style={{ fontSize: 13, fontWeight: 800, margin: '0 0 4px' }}>เป้าหมายในการยิงแอดครั้งนี้</p>
+              <p style={{ fontSize: 11, color: MUTED, marginBottom: 14, fontWeight: 500 }}>เลือกสิ่งที่ต้องการเน้น — ระบบจะตั้งค่าและแสดงผลตามเป้าหมายนี้</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {GOALS.map(g => (
+                  <button key={g.id} onClick={() => { setSelectedGoal(g.id); setStep(4) }}
+                    style={{
+                      width: '100%', padding: '14px 16px', border: `1.5px solid ${selectedGoal === g.id ? g.color + '66' : BORDER}`,
+                      borderRadius: 14, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      background: selectedGoal === g.id ? g.bg : 'linear-gradient(145deg, #ffffff, #f5f7ff)',
+                      boxShadow: SHADOW_SM, transition: 'all 0.18s', display: 'flex', alignItems: 'center', gap: 12,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + '66'; e.currentTarget.style.background = g.bg }}
+                    onMouseLeave={e => { if (selectedGoal !== g.id) { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f7ff)' } }}>
+                    <span style={{ fontSize: 24 }}>{g.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: g.color }}>{g.label}</div>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 500, marginTop: 2 }}>{g.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Budget & Submit */}
+          {step === 4 && (
+            <div>
+              <button onClick={() => setStep(3)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
 
               {/* Selected post */}
               <div style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: `1.5px solid rgba(67,56,202,0.2)`, borderRadius: 13, padding: '11px 15px', marginBottom: 16 }}>
@@ -804,17 +724,27 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
                 <p style={{ fontSize: 13, margin: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>{selectedPost?.message || selectedPost?.story || selectedPost?.id}</p>
               </div>
 
+              {/* Goal badge */}
+              {selectedGoal && (() => { const g = goalById(selectedGoal); return (
+                <div style={{ background: g.bg, border: `1.5px solid ${g.color}33`, borderRadius: 13, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 22 }}>{g.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: g.color }}>{g.label}</div>
+                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 500 }}>{g.desc}</div>
+                  </div>
+                </div>
+              ) })()}
+
               {/* AI info */}
               <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 16 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: GREEN }}>🤖 AI จะสร้าง 3-4 แอดทดสอบอัตโนมัติ</span>
-                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, lineHeight: 1.6 }}>AI จะอ่านเนื้อหาโพสต์แล้วสร้างแอด 3-4 แบบที่ targeting ต่างกัน เพื่อทดสอบว่าแบบไหนได้ผลดีที่สุด</div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: GREEN }}>🤖 AI จะเลือก targeting ให้อัตโนมัติ</span>
+                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, lineHeight: 1.6 }}>AI จะอ่านเนื้อหาโพสต์แล้วเลือก กลุ่มเป้าหมาย อายุ เพศ ความสนใจ ให้เหมาะสมที่สุด</div>
               </div>
 
               {/* Budget */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: MUTED, fontWeight: 700, display: 'block', marginBottom: 7 }}>งบต่อวัน (บาท) — ขั้นต่ำ ฿{MIN_BUDGET}</label>
-                <input type="number" value={budget || ''} min={MIN_BUDGET} onChange={e => setBudget(Number(e.target.value) || 0)} style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} />
-                {budget < MIN_BUDGET && <p style={{ fontSize: 11, color: RED, margin: '5px 0 0', fontWeight: 700 }}>งบขั้นต่ำ ฿{MIN_BUDGET} (AI สร้าง 3 แบบ × ฿40 ขั้นต่ำ/แบบ)</p>}
+                <label style={{ fontSize: 12, color: MUTED, fontWeight: 700, display: 'block', marginBottom: 7 }}>งบต่อวัน (บาท)</label>
+                <input type="number" value={budget} min={20} onChange={e => setBudget(Number(e.target.value))} style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} />
               </div>
 
               {/* Duration */}
@@ -841,53 +771,46 @@ function BoostModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () =
                 </div>
               </div>
 
-              <button onClick={handleSubmit} disabled={submitting || budget < MIN_BUDGET} style={{ width: '100%', padding: '15px', background: (submitting || budget < MIN_BUDGET) ? '#a5b4fc' : 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', border: 'none', borderRadius: 15, cursor: (submitting || budget < MIN_BUDGET) ? 'not-allowed' : 'pointer', fontSize: 16, fontWeight: 900, fontFamily: 'inherit', boxShadow: submitting ? 'none' : '0 7px 24px rgba(67,56,202,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, transition: 'all 0.2s' }}>
+              <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '15px', background: submitting ? '#a5b4fc' : 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', border: 'none', borderRadius: 15, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 16, fontWeight: 900, fontFamily: 'inherit', boxShadow: submitting ? 'none' : '0 7px 24px rgba(67,56,202,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, transition: 'all 0.2s' }}>
                 {submitting ? (
-                  <><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> AI กำลังสร้าง 3-4 แอดทดสอบ...</>
+                  <><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> AI กำลังวิเคราะห์ + สร้างแอด...</>
                 ) : (
-                  <><Zap size={18} /> ยิงแอด! (AI สร้าง 3 แบบทดสอบ • ฿{Math.round(budget / 3)}/แบบ)</>
+                  <><Zap size={18} /> ยิงแอดเลย! (AI เลือก targeting)</>
                 )}
               </button>
             </div>
           )}
 
-          {/* Step 4: AI AB Test Result */}
-          {step === 4 && aiResult && (
+          {/* Step 5: AI Result */}
+          {step === 5 && aiResult && (
             <div>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <div style={{ fontSize: 48, marginBottom: 8 }}>🎯</div>
-                <p style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>AI สร้าง {aiResult.variants?.length || 0} แอดทดสอบ!</p>
-                <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>กำลังทดสอบเป้าหมายที่แตกต่างกัน</p>
+                <div style={{ fontSize: 48, marginBottom: 8 }}>✅</div>
+                <p style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>สร้างแอดสำเร็จ!</p>
+                <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>AI เลือก targeting ให้อัตโนมัติ</p>
               </div>
 
-              {/* AI Post Analysis */}
-              {aiResult.postAnalysis && (
-                <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 14 }}>
-                  <p style={{ fontSize: 12, color: GREEN, fontWeight: 800, margin: '0 0 4px' }}>🤖 AI วิเคราะห์โพสต์:</p>
-                  <p style={{ fontSize: 12, margin: 0, lineHeight: 1.6, fontWeight: 500, color: '#166534' }}>{aiResult.postAnalysis}</p>
+              <div style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: `1.5px solid rgba(67,56,202,0.2)`, borderRadius: 16, padding: '16px 20px', marginBottom: 16 }}>
+                <p style={{ fontSize: 12, color: PRIMARY, fontWeight: 800, margin: '0 0 8px' }}>🤖 AI เลือกให้:</p>
+                <p style={{ fontSize: 13, margin: '0 0 10px', lineHeight: 1.6, fontWeight: 500 }}>{aiResult.reasoning}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '4px 12px', borderRadius: 999 }}>
+                    อายุ {aiResult.targeting?.ageMin}-{aiResult.targeting?.ageMax} ปี
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '4px 12px', borderRadius: 999 }}>
+                    {aiResult.targeting?.genders?.length === 0 ? 'ทุกเพศ' : aiResult.targeting?.genders?.includes(1) ? 'ชาย' : 'หญิง'}
+                  </span>
+                  {aiResult.targeting?.interests?.map((int: any, i: number) => (
+                    <span key={i} style={{ fontSize: 11, fontWeight: 700, background: GREEN_L, color: GREEN, padding: '4px 12px', borderRadius: 999 }}>
+                      {int.name}
+                    </span>
+                  ))}
                 </div>
-              )}
-
-              {/* Variants */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-                {(aiResult.variants || []).map((v: any, i: number) => (
-                  <div key={i} style={{ background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 14, padding: '14px 16px', boxShadow: SHADOW_SM }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: TEXT }}>{v.label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg, #4338ca, #818cf8)', color: 'white', padding: '3px 10px', borderRadius: 999 }}>฿{v.budget}/วัน</span>
-                    </div>
-                    <p style={{ fontSize: 11, color: MUTED, margin: 0, fontWeight: 600 }}>{v.strategy}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ background: 'linear-gradient(135deg, #eef2ff, #ede9fe)', border: `1.5px solid rgba(99,102,241,0.2)`, borderRadius: 13, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: PRIMARY, fontWeight: 700, textAlign: 'center' }}>
-                💡 ระบบจะเปรียบเทียบผลทุก 12 ชม. แล้วบอกว่าแบบไหนดี/ไม่ดี อัตโนมัติ
               </div>
 
               <button onClick={() => { onClose(); onSuccess() }}
                 style={{ width: '100%', padding: '15px', background: 'linear-gradient(135deg, #059669, #34d399)', color: 'white', border: 'none', borderRadius: 15, cursor: 'pointer', fontSize: 16, fontWeight: 900, fontFamily: 'inherit', boxShadow: '0 7px 24px rgba(5,150,105,0.4)' }}>
-                ดูผลทดสอบ
+                เสร็จสิ้น
               </button>
             </div>
           )}
@@ -907,6 +830,7 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
   const [budget, setBudget] = useState(0)
   const [days, setDays] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedGoalAB, setSelectedGoalAB] = useState('')
   const [loadingPosts, setLoadingPosts] = useState(false)
   const [error, setError] = useState('')
   const [aiPlan, setAiPlan] = useState<any>(null)
@@ -936,16 +860,17 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
           days: days || undefined,
           existingReactions: selectedPost.reactions?.summary?.total_count || 0,
           existingShares: selectedPost.shares?.count || 0,
+          goal: selectedGoalAB || undefined,
         }),
       })
       const d = await res.json(); setSubmitting(false)
       if (!res.ok || d.error) { setError(d.error || 'เกิดข้อผิดพลาด'); return }
-      setAiPlan(d); setStep(4)
+      setAiPlan(d); setStep(5)
     } catch (err: any) { setSubmitting(false); setError(err.message || 'เกิดข้อผิดพลาด') }
   }
 
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 14px', background: SURFACE2, border: `1.5px solid ${BORDER}`, borderRadius: 10, color: TEXT, fontSize: 14, fontWeight: 700, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }
-  const stepNames = ['เลือก Page', 'เลือกโพสต์', 'ตั้งงบ (หรือให้ AI เลือก)', 'AI สร้าง Variants แล้ว!']
+  const stepNames = ['เลือก Page', 'เลือกโพสต์', 'เป้าหมาย', 'ตั้งงบ (หรือให้ AI เลือก)', 'AI สร้าง Variants แล้ว!']
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
@@ -954,9 +879,9 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: 19, fontWeight: 900, margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={20} color="#7c3aed" /> AI A/B Test</h2>
             <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
-              {[1,2,3,4].map(s => <div key={s} style={{ flex: 1, height: 5, borderRadius: 3, background: s <= step ? 'linear-gradient(90deg, #7c3aed, #a78bfa)' : '#e2e8f0' }} />)}
+              {[1,2,3,4,5].map(s => <div key={s} style={{ flex: 1, height: 5, borderRadius: 3, background: s <= step ? 'linear-gradient(90deg, #7c3aed, #a78bfa)' : '#e2e8f0' }} />)}
             </div>
-            <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>ขั้นที่ {step}/4 — {stepNames[step-1]}</p>
+            <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 600 }}>ขั้นที่ {step}/5 — {stepNames[step-1]}</p>
           </div>
           <button onClick={onClose} style={{ ...btnGhost, padding: '7px', borderRadius: 10, marginLeft: 14 }}><X size={18} /></button>
         </div>
@@ -968,12 +893,8 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
               <p style={{ fontSize: 12, color: MUTED, marginBottom: 12, fontWeight: 600 }}>AI จะอ่านข้อมูลจากเพจและโพสต์ แล้วสร้าง 3-4 กลุ่มเป้าหมายทดสอบอัตโนมัติ</p>
               {pages.map((p: any) => (
                 <button key={p.id} onClick={() => { setSelectedPage(p); fetchPosts(p); setStep(2) }}
-                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f3ff)', border: `1.5px solid rgba(124,58,237,0.15)`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_SM, display: 'flex', alignItems: 'center', gap: 12 }}>
-                  {p.picture?.data?.url ? <img src={p.picture.data.url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ fontSize: 20 }}>📄</span>}
-                  <div style={{ flex: 1 }}>
-                    <div>{p.name}</div>
-                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>{p.category || ''}{p.fan_count ? ` • ${fmt(p.fan_count)} likes` : ''}</div>
-                  </div>
+                  style={{ width: '100%', padding: '15px 18px', marginBottom: 9, background: 'linear-gradient(145deg, #ffffff, #f5f3ff)', border: `1.5px solid rgba(124,58,237,0.15)`, borderRadius: 14, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', boxShadow: SHADOW_SM }}>
+                  📄 {p.name}
                 </button>
               ))}
             </div>
@@ -990,21 +911,55 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
                   {p.full_picture && <img src={p.full_picture} alt="" style={{ width: 48, height: 48, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, fontWeight: 600 }}>{p.message || p.story || 'ไม่มีข้อความ'}</div>
-                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4, fontWeight: 600, display: 'flex', gap: 10, alignItems: 'center' }}>
-                      {fmtDate(p.created_time)}
-                      {p.reactions?.summary?.total_count > 0 && <span>❤️ {p.reactions.summary.total_count}</span>}
-                      {p.comments?.summary?.total_count > 0 && <span>💬 {p.comments.summary.total_count}</span>}
-                      {p.shares?.count > 0 && <span>🔄 {p.shares.count}</span>}
-                    </div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4, fontWeight: 600 }}>{fmtDate(p.created_time)}{p.reactions?.summary?.total_count ? ` • ${p.reactions.summary.total_count} reactions` : ''}</div>
                   </div>
                 </button>
               ))}
             </div>
           )}
 
+          {/* Step 3: Goal Selection */}
           {step === 3 && (
             <div>
               <button onClick={() => setStep(2)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
+              <p style={{ fontSize: 13, fontWeight: 800, margin: '0 0 4px' }}>เป้าหมายในการทดสอบ A/B</p>
+              <p style={{ fontSize: 11, color: MUTED, marginBottom: 14, fontWeight: 500 }}>เลือกสิ่งที่ต้องการเน้น — AI จะสร้าง variants ตามเป้าหมายนี้</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {GOALS.map(g => (
+                  <button key={g.id} onClick={() => { setSelectedGoalAB(g.id); setStep(4) }}
+                    style={{
+                      width: '100%', padding: '14px 16px', border: `1.5px solid ${selectedGoalAB === g.id ? g.color + '66' : 'rgba(124,58,237,0.15)'}`,
+                      borderRadius: 14, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      background: selectedGoalAB === g.id ? g.bg : 'linear-gradient(145deg, #ffffff, #f5f3ff)',
+                      boxShadow: SHADOW_SM, transition: 'all 0.18s', display: 'flex', alignItems: 'center', gap: 12,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + '66'; e.currentTarget.style.background = g.bg }}
+                    onMouseLeave={e => { if (selectedGoalAB !== g.id) { e.currentTarget.style.borderColor = 'rgba(124,58,237,0.15)'; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f3ff)' } }}>
+                    <span style={{ fontSize: 24 }}>{g.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: g.color }}>{g.label}</div>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 500, marginTop: 2 }}>{g.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Budget */}
+          {step === 4 && (
+            <div>
+              <button onClick={() => setStep(3)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
+              {/* Goal badge */}
+              {selectedGoalAB && (() => { const g = goalById(selectedGoalAB); return (
+                <div style={{ background: g.bg, border: `1.5px solid ${g.color}33`, borderRadius: 13, padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 22 }}>{g.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: g.color }}>{g.label}</div>
+                    <div style={{ fontSize: 10, color: MUTED, fontWeight: 500 }}>{g.desc}</div>
+                  </div>
+                </div>
+              ) })()}
               <div style={{ background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: `1.5px solid rgba(124,58,237,0.2)`, borderRadius: 13, padding: '13px 16px', marginBottom: 16 }}>
                 <p style={{ fontSize: 12, color: '#7c3aed', fontWeight: 800, margin: '0 0 4px' }}>ตั้งงบเอง หรือปล่อยว่างให้ AI แนะนำ</p>
                 <div style={{ marginBottom: 10 }}>
@@ -1022,7 +977,8 @@ function ABTestModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: () 
             </div>
           )}
 
-          {step === 4 && aiPlan && (
+          {/* Step 5: Results */}
+          {step === 5 && aiPlan && (
             <div>
               <div style={{ background: GREEN_L, border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '14px 16px', marginBottom: 16 }}>
                 <p style={{ fontSize: 12, color: GREEN, fontWeight: 800, margin: '0 0 6px' }}>AI วิเคราะห์โพสต์:</p>

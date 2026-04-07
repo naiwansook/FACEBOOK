@@ -174,6 +174,9 @@ ALTER TABLE ad_campaigns ADD COLUMN test_group_id UUID REFERENCES ab_test_groups
 ALTER TABLE ad_campaigns ADD COLUMN variant_label TEXT;        -- เช่น 'A: วัยรุ่น', 'B: คนทำงาน'
 ALTER TABLE ad_campaigns ADD COLUMN variant_strategy JSONB;    -- รายละเอียดกลยุทธ์ที่ AI เลือก
 
+-- เป้าหมายของแอด (goal)
+ALTER TABLE ad_campaigns ADD COLUMN goal TEXT DEFAULT 'reach'; -- auto_engagement, messages, sales_messages, leads_messages, traffic, calls, reach
+
 -- ============================================
 -- Indexes
 -- ============================================

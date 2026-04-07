@@ -14,21 +14,52 @@ const GOAL_CONFIG: Record<string, {
   optimization_goal: string
   billing_event: string
   destination_type?: string
+  label: string
 }> = {
-  engagement: {
+  auto_engagement: {
     objective: 'OUTCOME_ENGAGEMENT',
     optimization_goal: 'ENGAGED_USERS',
     billing_event: 'IMPRESSIONS',
+    label: 'อัตโนมัติ - เพิ่มการมีส่วนร่วม',
+  },
+  messages: {
+    objective: 'OUTCOME_ENGAGEMENT',
+    optimization_goal: 'CONVERSATIONS',
+    billing_event: 'IMPRESSIONS',
+    destination_type: 'MESSENGER',
+    label: 'เพิ่มจำนวนข้อความ',
+  },
+  sales_messages: {
+    objective: 'OUTCOME_SALES',
+    optimization_goal: 'CONVERSATIONS',
+    billing_event: 'IMPRESSIONS',
+    destination_type: 'MESSENGER',
+    label: 'เพิ่มยอดการซื้อผ่านข้อความ',
+  },
+  leads_messages: {
+    objective: 'OUTCOME_LEADS',
+    optimization_goal: 'LEAD_GENERATION',
+    billing_event: 'IMPRESSIONS',
+    destination_type: 'MESSENGER',
+    label: 'เพิ่มข้อมูลลูกค้าผ่านข้อความ',
   },
   traffic: {
     objective: 'OUTCOME_TRAFFIC',
     optimization_goal: 'LINK_CLICKS',
     billing_event: 'IMPRESSIONS',
+    label: 'เพิ่มผู้เยี่ยมชมเว็บไซต์',
+  },
+  calls: {
+    objective: 'OUTCOME_ENGAGEMENT',
+    optimization_goal: 'QUALITY_CALL',
+    billing_event: 'IMPRESSIONS',
+    label: 'เพิ่มจำนวนการโทร',
   },
   reach: {
     objective: 'OUTCOME_AWARENESS',
     optimization_goal: 'REACH',
     billing_event: 'IMPRESSIONS',
+    label: 'เข้าถึงคนมากสุด',
   },
 }
 
@@ -45,26 +76,39 @@ export async function POST(req: Request) {
     const body = await req.json()
     const {
       postId, pageId, pageToken, pageName, pageCategory, postMessage, postImage,
-      campaignName, dailyBudget, startDate, endDate,
+      campaignName, dailyBudget, startDate, endDate, goal,
     } = body
 
     if (!postId || !pageId || !pageToken || !campaignName || !dailyBudget) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 })
     }
 
-    // AI เลือก targeting + objective อัตโนมัติ
+    // Use user-selected goal or fallback to AI choice
+    let goalKey = goal || ''
+    let goalConfig = GOAL_CONFIG[goalKey]
+
+    if (!goalConfig) {
+      // AI เลือก targeting + objective อัตโนมัติ
+      const aiTargeting = await generateAutoTargeting({
+        postMessage: postMessage || '',
+        postImage: !!postImage,
+        pageCategory: pageCategory || '',
+        pageName: pageName || '',
+      })
+
+      goalKey = aiTargeting.objective === 'LINK_CLICKS' ? 'traffic'
+        : aiTargeting.objective === 'REACH' ? 'reach'
+        : 'auto_engagement'
+      goalConfig = GOAL_CONFIG[goalKey]
+    }
+
+    // AI targeting (always generate for targeting info)
     const aiTargeting = await generateAutoTargeting({
       postMessage: postMessage || '',
       postImage: !!postImage,
       pageCategory: pageCategory || '',
       pageName: pageName || '',
     })
-
-    // Map AI objective to Facebook goal config
-    const aiGoal = aiTargeting.objective === 'LINK_CLICKS' ? 'traffic'
-      : aiTargeting.objective === 'REACH' ? 'reach'
-      : 'engagement'
-    const goalConfig = GOAL_CONFIG[aiGoal] || GOAL_CONFIG.engagement
 
     // ── 3. Supabase ───────────────────────────────────────────
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -159,13 +203,11 @@ export async function POST(req: Request) {
     }
 
     // ── 8. Build Targeting (AI-driven) ─────────────────────────
-    // Validate AI-generated interests against Facebook API (get real IDs)
     let validInterests: { id: string; name: string }[] = []
     if (aiTargeting.targeting.interests && aiTargeting.targeting.interests.length > 0) {
       validInterests = await resolveInterests(aiTargeting.targeting.interests, userToken)
     }
 
-    // Thailand requires ageMin >= 20 when using interest targeting
     const ageMin = validInterests.length > 0
       ? Math.max(20, aiTargeting.targeting.ageMin)
       : Math.max(18, aiTargeting.targeting.ageMin)
@@ -186,7 +228,6 @@ export async function POST(req: Request) {
       }]
     }
 
-    // Facebook requires Advantage audience flag
     targeting.targeting_automation = { advantage_audience: 0 }
 
     // ── 9. Create Campaign ────────────────────────────────────
@@ -231,7 +272,6 @@ export async function POST(req: Request) {
         status: 'ACTIVE',
       }
 
-      // Messages goal needs destination_type
       if (goalConfig.destination_type) {
         adsetBody.destination_type = goalConfig.destination_type
       }
@@ -310,6 +350,7 @@ export async function POST(req: Request) {
         start_time: startDate || new Date().toISOString(),
         end_time: endDate,
         status: 'active',
+        goal: goalKey,
       })
       .select()
       .single()
@@ -325,6 +366,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true, campaignId: campaign.id, fbCampaignId,
+      goal: goalKey,
+      goalLabel: goalConfig.label,
       aiTargeting: {
         reasoning: aiTargeting.reasoning,
         objective: aiTargeting.objective,
