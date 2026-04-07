@@ -234,7 +234,7 @@ export async function POST(req: Request) {
           adset_id: fbAdSetId,
           creative: { creative_id: creativeData.id },
           status: 'ACTIVE',
-          access_token: userToken,
+          access_token: pageToken,
         }),
       })
       const adData = await adRes.json()
