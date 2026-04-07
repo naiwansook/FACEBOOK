@@ -1,14 +1,14 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { updateAllStatus, resolveInterests } from '@/lib/facebook'
+import { updateAllStatus } from '@/lib/facebook'
 import { generateAutoTargeting } from '@/lib/ai-analyzer'
 
 export const dynamic = 'force-dynamic'
 
 const FB = 'https://graph.facebook.com/v19.0'
 
-// ── Goal → Facebook API mapping ──────────────────────────────
+// ── Goal → Facebook API mapping (safe for post boosting) ─────
 const GOAL_CONFIG: Record<string, {
   objective: string
   optimization_goal: string
@@ -18,7 +18,7 @@ const GOAL_CONFIG: Record<string, {
 }> = {
   auto_engagement: {
     objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
     label: 'อัตโนมัติ - เพิ่มการมีส่วนร่วม',
   },
@@ -30,18 +30,18 @@ const GOAL_CONFIG: Record<string, {
     label: 'เพิ่มจำนวนข้อความ',
   },
   sales_messages: {
-    objective: 'OUTCOME_SALES',
+    objective: 'OUTCOME_ENGAGEMENT',
     optimization_goal: 'CONVERSATIONS',
     billing_event: 'IMPRESSIONS',
     destination_type: 'MESSENGER',
-    label: 'เพิ่มยอดการซื้อผ่านข้อความ',
+    label: 'เพิ่มยอดขายผ่านข้อความ',
   },
   leads_messages: {
-    objective: 'OUTCOME_LEADS',
-    optimization_goal: 'LEAD_GENERATION',
+    objective: 'OUTCOME_ENGAGEMENT',
+    optimization_goal: 'CONVERSATIONS',
     billing_event: 'IMPRESSIONS',
     destination_type: 'MESSENGER',
-    label: 'เพิ่มข้อมูลลูกค้าผ่านข้อความ',
+    label: 'เก็บข้อมูลลูกค้าผ่านข้อความ',
   },
   traffic: {
     objective: 'OUTCOME_TRAFFIC',
@@ -51,9 +51,9 @@ const GOAL_CONFIG: Record<string, {
   },
   calls: {
     objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'QUALITY_CALL',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
-    label: 'เพิ่มจำนวนการโทร',
+    label: 'เพิ่มการมีส่วนร่วม (โทร)',
   },
   reach: {
     objective: 'OUTCOME_AWARENESS',
@@ -83,32 +83,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 })
     }
 
-    // Use user-selected goal or fallback to AI choice
-    let goalKey = goal || ''
-    let goalConfig = GOAL_CONFIG[goalKey]
-
-    if (!goalConfig) {
-      // AI เลือก targeting + objective อัตโนมัติ
-      const aiTargeting = await generateAutoTargeting({
-        postMessage: postMessage || '',
-        postImage: !!postImage,
-        pageCategory: pageCategory || '',
-        pageName: pageName || '',
-      })
-
-      goalKey = aiTargeting.objective === 'LINK_CLICKS' ? 'traffic'
-        : aiTargeting.objective === 'REACH' ? 'reach'
-        : 'auto_engagement'
-      goalConfig = GOAL_CONFIG[goalKey]
-    }
-
-    // AI targeting (always generate for targeting info)
+    // AI เลือก targeting + objective อัตโนมัติ
     const aiTargeting = await generateAutoTargeting({
       postMessage: postMessage || '',
       postImage: !!postImage,
       pageCategory: pageCategory || '',
       pageName: pageName || '',
     })
+
+    // Use user-selected goal, or fallback to AI suggestion
+    const goalKey = goal && GOAL_CONFIG[goal] ? goal : 'auto_engagement'
+    const goalConfig = GOAL_CONFIG[goalKey]
 
     // ── 3. Supabase ───────────────────────────────────────────
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -203,18 +188,9 @@ export async function POST(req: Request) {
     }
 
     // ── 8. Build Targeting (AI-driven) ─────────────────────────
-    let validInterests: { id: string; name: string }[] = []
-    if (aiTargeting.targeting.interests && aiTargeting.targeting.interests.length > 0) {
-      validInterests = await resolveInterests(aiTargeting.targeting.interests, userToken)
-    }
-
-    const ageMin = validInterests.length > 0
-      ? Math.max(20, aiTargeting.targeting.ageMin)
-      : Math.max(18, aiTargeting.targeting.ageMin)
-
     const targeting: any = {
-      age_min: ageMin,
-      age_max: Math.min(65, aiTargeting.targeting.ageMax),
+      age_min: aiTargeting.targeting.ageMin,
+      age_max: aiTargeting.targeting.ageMax,
       geo_locations: { countries: ['TH'] },
     }
 
@@ -222,13 +198,11 @@ export async function POST(req: Request) {
       targeting.genders = aiTargeting.targeting.genders
     }
 
-    if (validInterests.length > 0) {
+    if (aiTargeting.targeting.interests && aiTargeting.targeting.interests.length > 0) {
       targeting.flexible_spec = [{
-        interests: validInterests,
+        interests: aiTargeting.targeting.interests.map((i: any) => ({ id: i.id, name: i.name })),
       }]
     }
-
-    targeting.targeting_automation = { advantage_audience: 0 }
 
     // ── 9. Create Campaign ────────────────────────────────────
     let fbCampaignId: string
@@ -272,6 +246,7 @@ export async function POST(req: Request) {
         status: 'ACTIVE',
       }
 
+      // Messages goal needs destination_type
       if (goalConfig.destination_type) {
         adsetBody.destination_type = goalConfig.destination_type
       }
@@ -346,6 +321,7 @@ export async function POST(req: Request) {
         fb_post_id: postId,
         campaign_name: campaignName,
         post_message: postMessage,
+        post_image: postImage || null,
         daily_budget: dailyBudget,
         start_time: startDate || new Date().toISOString(),
         end_time: endDate,
@@ -366,8 +342,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true, campaignId: campaign.id, fbCampaignId,
-      goal: goalKey,
-      goalLabel: goalConfig.label,
       aiTargeting: {
         reasoning: aiTargeting.reasoning,
         objective: aiTargeting.objective,

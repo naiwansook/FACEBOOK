@@ -1,10 +1,21 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { resolveInterests } from '@/lib/facebook'
+import { createCampaign, createAdSet, createAd, getAdAccount } from '@/lib/facebook'
 import { generateTestVariants, type PostContext } from '@/lib/ai-analyzer'
 
 export const dynamic = 'force-dynamic'
+
+// ── Goal → Facebook API mapping (safe for post boosting) ─────
+const GOAL_CFG: Record<string, { objective: string; optimization_goal: string; billing_event: string; destination_type?: string }> = {
+  auto_engagement: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS' },
+  messages:        { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', billing_event: 'IMPRESSIONS', destination_type: 'MESSENGER' },
+  sales_messages:  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', billing_event: 'IMPRESSIONS', destination_type: 'MESSENGER' },
+  leads_messages:  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', billing_event: 'IMPRESSIONS', destination_type: 'MESSENGER' },
+  traffic:         { objective: 'OUTCOME_TRAFFIC', optimization_goal: 'LINK_CLICKS', billing_event: 'IMPRESSIONS' },
+  calls:           { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS' },
+  reach:           { objective: 'OUTCOME_AWARENESS', optimization_goal: 'REACH', billing_event: 'IMPRESSIONS' },
+}
 
 export async function POST(req: Request) {
   try {
@@ -47,35 +58,18 @@ export async function POST(req: Request) {
       .single()
     if (userError) throw new Error(userError.message)
 
-    // Get ad account (try user token first, then page token — same as create/route.ts)
-    const FB = 'https://graph.facebook.com/v19.0'
+    // Get ad account
     let adAccountId: string | null = null
-
-    // Method 1: User's ad accounts
     try {
-      const r = await fetch(`${FB}/me/adaccounts?fields=id,name,account_status&limit=10&access_token=${session.accessToken}`)
-      const d = await r.json()
-      if (!d.error && d.data?.length > 0) {
-        const active = d.data.find((a: any) => a.account_status === 1) || d.data[0]
-        adAccountId = active.id
-      }
-    } catch { /* continue */ }
-
-    // Method 2: Page's ad accounts (fallback)
-    if (!adAccountId) {
-      try {
-        const r = await fetch(`${FB}/${pageId}/adaccounts?fields=id,account_status&access_token=${pageToken}`)
-        const d = await r.json()
-        if (!d.error && d.data?.length > 0) {
-          const active = d.data.find((a: any) => a.account_status === 1) || d.data[0]
-          adAccountId = active.id
-        }
-      } catch { /* continue */ }
+      const adAccount = await getAdAccount(pageId, pageToken)
+      adAccountId = adAccount?.id || null
+    } catch {
+      // continue
     }
 
     if (!adAccountId) {
       return NextResponse.json({
-        error: 'ไม่พบ Ad Account — กรุณาตรวจสอบสิทธิ์ ads_management',
+        error: 'ไม่พบ Ad Account สำหรับ Page นี้',
       }, { status: 400 })
     }
 
@@ -138,130 +132,46 @@ export async function POST(req: Request) {
     endDate.setDate(endDate.getDate() + finalDays)
     const endDateStr = endDate.toISOString()
 
-    // Goal → Facebook objective mapping
-    const GOAL_MAP: Record<string, { objective: string; optimization_goal: string; destination_type?: string }> = {
-      auto_engagement: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS' },
-      messages: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', destination_type: 'MESSENGER' },
-      sales_messages: { objective: 'OUTCOME_SALES', optimization_goal: 'CONVERSATIONS', destination_type: 'MESSENGER' },
-      leads_messages: { objective: 'OUTCOME_LEADS', optimization_goal: 'LEAD_GENERATION', destination_type: 'MESSENGER' },
-      traffic: { objective: 'OUTCOME_TRAFFIC', optimization_goal: 'LINK_CLICKS' },
-      calls: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'QUALITY_CALL' },
-      reach: { objective: 'OUTCOME_AWARENESS', optimization_goal: 'REACH' },
-    }
-    const goalCfg = GOAL_MAP[goal] || GOAL_MAP.reach
-
     const createdVariants = []
-    const variantErrors: string[] = []
-    const userToken = session.accessToken as string
 
-    // Facebook Thailand minimum daily budget is ~34 baht
-    const FB_MIN_BUDGET = 40
-    const maxVariants = Math.floor(finalDailyBudget / FB_MIN_BUDGET)
-    const variantsToCreate = testPlan.variants.slice(0, Math.max(2, maxVariants))
-
-    for (const variant of variantsToCreate) {
+    for (const variant of testPlan.variants) {
       try {
-        const equalBudget = Math.round(finalDailyBudget / variantsToCreate.length)
-        const variantBudget = Math.max(equalBudget, FB_MIN_BUDGET)
+        const variantBudget = Math.round(finalDailyBudget * variant.budgetPercent / 100)
+        if (variantBudget < 20) continue // Facebook minimum
 
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
-        // ── Create Campaign (exact same as create/route.ts) ──
-        const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: campaignName,
-            objective: goalCfg.objective,
-            status: 'ACTIVE',
-            buying_type: 'AUCTION',
-            special_ad_categories: [],
-            is_adset_budget_sharing_enabled: false,
-            access_token: userToken,
-          }),
-        })
-        const campData = await campRes.json()
-        if (campData.error) throw new Error(`Campaign: ${campData.error.error_user_msg || campData.error.message}`)
-        const fbCampaignId = campData.id
+        // Use user-selected goal or fallback
+        const goalCfg = GOAL_CFG[goal] || GOAL_CFG.auto_engagement
 
-        // ── Validate interests ──
-        const validInterests = variant.targeting.interests?.length
-          ? await resolveInterests(variant.targeting.interests, userToken)
-          : []
+        // Create Facebook Campaign
+        const fbCampaignId = await createCampaign(adAccountId, pageToken, campaignName, goalCfg.objective)
 
-        // ── Build targeting (exact same as create/route.ts) ──
-        const targeting: any = {
-          age_min: Math.max(20, variant.targeting.ageMin || 20),
-          age_max: Math.min(65, variant.targeting.ageMax || 55),
-          geo_locations: { countries: ['TH'] },
-          targeting_automation: { advantage_audience: 0 },
-        }
-        // Only add genders if specified (1=male, 2=female)
-        const genders = (variant.targeting.genders || []).filter((g: number) => g === 1 || g === 2)
-        if (genders.length > 0) targeting.genders = genders
-        // Only add interests if valid
-        if (validInterests.length > 0) {
-          targeting.flexible_spec = [{ interests: validInterests }]
-        }
-
-        // ── Create Ad Set (boost post — compatible with object_story_id creative) ──
-        const adsetBody: any = {
+        // Create Ad Set with variant-specific targeting + goal config
+        const fbAdSetId = await createAdSet(adAccountId, pageToken, fbCampaignId, {
           name: `${variant.label} - Ad Set`,
-          campaign_id: fbCampaignId,
-          daily_budget: Math.round(variantBudget * 100),
-          bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-          start_time: startDate,
-          end_time: endDateStr,
-          billing_event: 'IMPRESSIONS',
-          optimization_goal: goalCfg.optimization_goal,
-          targeting,
-          promoted_object: { page_id: pageId },
-          access_token: userToken,
-          status: 'ACTIVE',
-        }
-        if (goalCfg.destination_type) {
-          adsetBody.destination_type = goalCfg.destination_type
-        }
-        const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(adsetBody),
+          dailyBudget: variantBudget,
+          startTime: startDate,
+          endTime: endDateStr,
+          targeting: {
+            ageMin: variant.targeting.ageMin,
+            ageMax: variant.targeting.ageMax,
+            genders: variant.targeting.genders,
+            geoLocations: variant.targeting.geoLocations || { countries: ['TH'] },
+            interests: variant.targeting.interests,
+          },
+          pageId,
+          optimizationGoal: goalCfg.optimization_goal,
+          billingEvent: goalCfg.billing_event,
+          destinationType: goalCfg.destination_type,
         })
-        const adsetData = await adsetRes.json()
-        if (adsetData.error) {
-          // Rollback campaign
-          try { await fetch(`${FB}/${fbCampaignId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: userToken }) }) } catch {}
-          throw new Error(`AdSet: ${adsetData.error.error_user_msg || adsetData.error.message} [${JSON.stringify(adsetData.error).slice(0, 200)}]`)
-        }
-        const fbAdSetId = adsetData.id
 
-        // ── Create Creative + Ad (exact same as create/route.ts) ──
-        const creativeRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `Creative - ${variant.label}`,
-            object_story_id: postId,
-            access_token: pageToken,
-          }),
+        // Create Ad
+        const fbAdId = await createAd(adAccountId, pageToken, fbAdSetId, {
+          name: `${variant.label} - Ad`,
+          pageId,
+          postId,
         })
-        const creativeData = await creativeRes.json()
-        if (creativeData.error) throw new Error(`Creative: ${creativeData.error.error_user_msg || creativeData.error.message}`)
-
-        const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${variant.label} - Ad`,
-            adset_id: fbAdSetId,
-            creative: { creative_id: creativeData.id },
-            status: 'ACTIVE',
-            access_token: userToken,
-          }),
-        })
-        const adData = await adRes.json()
-        if (adData.error) throw new Error(`Ad: ${adData.error.error_user_msg || adData.error.message}`)
-        const fbAdId = adData.id
 
         // Save to database
         const { data: campaign, error: campaignError } = await supabase
@@ -279,7 +189,7 @@ export async function POST(req: Request) {
             start_time: startDate,
             end_time: endDateStr,
             status: 'active',
-            goal: goal || 'reach',
+            goal: goal || 'auto_engagement',
             test_group_id: testGroup.id,
             variant_label: variant.label,
             variant_strategy: {
@@ -304,7 +214,6 @@ export async function POST(req: Request) {
         })
       } catch (variantErr: any) {
         console.error(`Error creating variant ${variant.label}:`, variantErr.message)
-        variantErrors.push(`${variant.label}: ${variantErr.message}`)
         // Continue with other variants
       }
     }
@@ -313,7 +222,7 @@ export async function POST(req: Request) {
       // Clean up test group if no variants created
       await supabase.from('ab_test_groups').delete().eq('id', testGroup.id)
       return NextResponse.json({
-        error: `ไม่สามารถสร้าง variant ได้เลย: ${variantErrors.join(' | ')}`,
+        error: 'ไม่สามารถสร้าง variant ได้เลย กรุณาตรวจสอบ Ad Account และลองใหม่',
       }, { status: 500 })
     }
 

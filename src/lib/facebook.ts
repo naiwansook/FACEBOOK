@@ -49,67 +49,67 @@ export async function getPagePosts(pageId: string, pageToken: string, limit = 20
 /** สร้าง Campaign */
 export async function createCampaign(
   adAccountId: string,
-  accessToken: string,
-  name: string
+  pageToken: string,
+  name: string,
+  objective: string = 'OUTCOME_ENGAGEMENT'
 ) {
   const res = await fetch(`${FB_API}/${adAccountId}/campaigns`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name,
-      objective: 'OUTCOME_ENGAGEMENT',
+      objective,
       status: 'ACTIVE',
-      buying_type: 'AUCTION',
       special_ad_categories: [],
-      is_adset_budget_sharing_enabled: false,
-      access_token: accessToken,
+      access_token: pageToken,
     }),
   })
   const data = await res.json()
-  if (data.error) throw new Error(`Campaign: ${JSON.stringify(data.error)}`)
+  if (data.error) throw new Error(data.error.message)
   return data.id as string
 }
 
 /** สร้าง Ad Set */
 export async function createAdSet(
   adAccountId: string,
-  accessToken: string,
+  pageToken: string,
   campaignId: string,
   opts: {
     name: string
-    dailyBudget: number   // หน่วย: บาท (จะแปลงเป็นสตางค์เอง)
+    dailyBudget: number   // หน่วย: บาท (จะ convert เป็นสตางค์ในฟังก์ชัน)
     startTime: string     // ISO string
     endTime: string
     targeting: AdTargeting
     pageId: string
+    optimizationGoal?: string
+    billingEvent?: string
+    destinationType?: string
   }
 ) {
   const adsetBody: any = {
     name: opts.name,
     campaign_id: campaignId,
     daily_budget: Math.round(opts.dailyBudget * 100), // convert to satang
-    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     start_time: opts.startTime,
     end_time: opts.endTime,
-    billing_event: 'IMPRESSIONS',
-    optimization_goal: 'CONVERSATIONS',
-    destination_type: 'MESSENGER',
+    billing_event: opts.billingEvent || 'IMPRESSIONS',
+    optimization_goal: opts.optimizationGoal || 'ENGAGED_USERS',
     targeting: {
-      // Thailand requires ageMin >= 20 when using interest targeting
-      age_min: opts.targeting.interests?.length
-        ? Math.max(20, opts.targeting.ageMin)
-        : Math.max(20, opts.targeting.ageMin),
-      age_max: Math.min(65, opts.targeting.ageMax),
-      genders: opts.targeting.genders?.length ? opts.targeting.genders : undefined,
+      age_min: opts.targeting.ageMin,
+      age_max: opts.targeting.ageMax,
+      genders: opts.targeting.genders,
       geo_locations: opts.targeting.geoLocations || { countries: ['TH'] },
       flexible_spec: opts.targeting.interests?.length
         ? [{ interests: opts.targeting.interests }]
         : undefined,
-      targeting_automation: { advantage_audience: 0 },
     },
     promoted_object: { page_id: opts.pageId },
-    access_token: accessToken,
+    access_token: pageToken,
     status: 'ACTIVE',
+  }
+
+  if (opts.destinationType) {
+    adsetBody.destination_type = opts.destinationType
   }
 
   const res = await fetch(`${FB_API}/${adAccountId}/adsets`, {
@@ -118,7 +118,7 @@ export async function createAdSet(
     body: JSON.stringify(adsetBody),
   })
   const data = await res.json()
-  if (data.error) throw new Error(`AdSet: ${JSON.stringify(data.error)}`)
+  if (data.error) throw new Error(data.error.message)
   return data.id as string
 }
 
@@ -317,55 +317,20 @@ export async function getRealStatus(
 /** อัปเดต Daily Budget */
 export async function updateAdSetBudget(
   adSetId: string,
-  accessToken: string,
+  pageToken: string,
   dailyBudget: number
 ) {
-  const params = new URLSearchParams({
-    daily_budget: String(Math.round(dailyBudget * 100)),
-    access_token: accessToken,
-  })
   const res = await fetch(`${FB_API}/${adSetId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      daily_budget: Math.round(dailyBudget * 100),
+      access_token: pageToken,
+    }),
   })
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
   return data.success as boolean
-}
-
-// ============================================
-// Interest Search (validate AI-generated interests)
-// ============================================
-
-/** ค้นหา Interest ID จริงจาก Facebook API */
-export async function searchInterest(
-  keyword: string,
-  accessToken: string
-): Promise<{ id: string; name: string } | null> {
-  try {
-    const res = await fetch(
-      `${FB_API}/search?type=adinterest&q=${encodeURIComponent(keyword)}&limit=5&locale=th_TH&access_token=${accessToken}`
-    )
-    const data = await res.json()
-    if (data.error || !data.data?.length) return null
-    // Return the best match (first result)
-    return { id: data.data[0].id, name: data.data[0].name }
-  } catch {
-    return null
-  }
-}
-
-/** ค้นหาหลาย interests พร้อมกัน — ข้ามตัวที่หาไม่เจอ */
-export async function resolveInterests(
-  keywords: { id?: string; name: string }[],
-  accessToken: string
-): Promise<{ id: string; name: string }[]> {
-  if (!keywords?.length) return []
-  const results = await Promise.all(
-    keywords.map(k => searchInterest(k.name, accessToken))
-  )
-  return results.filter((r): r is { id: string; name: string } => r !== null)
 }
 
 /** อัปเดต End Time ของ Ad Set */
