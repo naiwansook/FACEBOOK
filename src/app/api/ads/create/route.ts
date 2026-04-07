@@ -44,8 +44,8 @@ const GOAL_CONFIG: Record<string, {
     label: 'เก็บข้อมูลลูกค้าผ่านข้อความ',
   },
   traffic: {
-    objective: 'OUTCOME_TRAFFIC',
-    optimization_goal: 'LINK_CLICKS',
+    objective: 'OUTCOME_ENGAGEMENT',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
     label: 'เพิ่มผู้เยี่ยมชมเว็บไซต์',
   },
@@ -56,8 +56,8 @@ const GOAL_CONFIG: Record<string, {
     label: 'เพิ่มการมีส่วนร่วม (โทร)',
   },
   reach: {
-    objective: 'OUTCOME_AWARENESS',
-    optimization_goal: 'REACH',
+    objective: 'OUTCOME_ENGAGEMENT',
+    optimization_goal: 'POST_ENGAGEMENT',
     billing_event: 'IMPRESSIONS',
     label: 'เข้าถึงคนมากสุด',
   },
