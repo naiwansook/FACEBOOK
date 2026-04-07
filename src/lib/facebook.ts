@@ -367,6 +367,26 @@ export async function resolveInterests(
   return results.filter((r): r is { id: string; name: string } => r !== null)
 }
 
+/** อัปเดต End Time ของ Ad Set */
+export async function updateAdSetEndTime(
+  adSetId: string,
+  accessToken: string,
+  endTime: string // ISO 8601
+) {
+  const params = new URLSearchParams({
+    end_time: endTime,
+    access_token: accessToken,
+  })
+  const res = await fetch(`${FB_API}/${adSetId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  })
+  const data = await res.json()
+  if (data.error) throw new Error(data.error.message)
+  return data.success as boolean
+}
+
 // ============================================
 // Types
 // ============================================

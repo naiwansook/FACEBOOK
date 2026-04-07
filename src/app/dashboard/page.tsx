@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause } from 'lucide-react'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -133,6 +133,29 @@ export default function Dashboard() {
   }
 
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [applying, setApplying] = useState<string | null>(null)
+
+  async function handleApplyRecommendation(campaignId: string) {
+    if (applying) return
+    setApplying(campaignId)
+    try {
+      const res = await fetch(`/api/ads/${campaignId}/apply-recommendation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        alert(`ไม่สำเร็จ: ${data.error || 'เกิดข้อผิดพลาด'}`)
+      } else {
+        alert(`✅ ${data.details}`)
+        loadAll()
+      }
+    } catch (e: any) {
+      alert(`ไม่สำเร็จ: ${e.message}`)
+    } finally {
+      setApplying(null)
+    }
+  }
 
   async function handleDelete(campaignId: string, campaignName: string) {
     if (deleting) return
@@ -297,7 +320,7 @@ export default function Dashboard() {
 
             {/* Standalone campaigns (not part of AB test) */}
             {campaigns.filter((c: any) => !c.test_group_id).map((c: any) => (
-              <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} onDelete={handleDelete} deleting={deleting} />
+              <CampaignCard key={c.id} campaign={c} onToggle={handleToggle} onDelete={handleDelete} deleting={deleting} onApply={handleApplyRecommendation} applying={applying} />
             ))}
           </div>
         )}
@@ -343,7 +366,7 @@ const fbStatusConfig: Record<string, { label: string; color: string; bg: string 
 }
 
 // ─── Campaign Card (with metrics + FB status + toggle) ────────
-function CampaignCard({ campaign: c, onToggle, onDelete, deleting }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null }) {
+function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, applying }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null; onApply: (id: string) => void; applying: string | null }) {
   const isActive = c.status === 'active'
   const isPaused = c.status === 'paused'
   const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
@@ -467,10 +490,39 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting }: { campaign:
         </div>
       )}
 
-      {/* AI summary */}
+      {/* AI summary + Apply button */}
       {analysis && (
         <div style={{ marginTop: 12, background: SURFACE2, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: MUTED, lineHeight: 1.6 }}>
           <span style={{ fontWeight: 700, color: TEXT }}>🤖 AI:</span> {analysis.summary}
+          {rec && analysis.recommendation !== 'keep_running' && !analysis.action_taken && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onApply(c.id) }}
+              disabled={applying === c.id}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, width: '100%',
+                padding: '9px 14px', borderRadius: 10, border: 'none', cursor: applying === c.id ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                background: applying === c.id
+                  ? '#a5b4fc'
+                  : `linear-gradient(135deg, ${rec.color}, ${rec.color}cc)`,
+                color: 'white',
+                boxShadow: `0 4px 14px ${rec.color}40`,
+                transition: 'all 0.18s',
+                justifyContent: 'center',
+              }}
+            >
+              {applying === c.id ? (
+                <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> กำลังดำเนินการ...</>
+              ) : (
+                <><CheckCircle size={14} /> ทำตาม AI แนะนำ — {rec.label}</>
+              )}
+            </button>
+          )}
+          {analysis.action_taken && (
+            <div style={{ marginTop: 8, fontSize: 11, color: GREEN, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <CheckCircle size={13} /> ดำเนินการตาม AI แล้ว
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1018,6 +1070,8 @@ function ABTestView({ testId, onClose }: { testId: string; onClose: () => void }
   const [comparing, setComparing] = useState(false)
   const [comparison, setComparison] = useState<any>(null)
   const [error, setError] = useState('')
+  const [applyingAB, setApplyingAB] = useState(false)
+  const [applied, setApplied] = useState(false)
 
   useEffect(() => { loadTestData() }, [testId])
 
@@ -1039,6 +1093,28 @@ function ABTestView({ testId, onClose }: { testId: string; onClose: () => void }
       if (d.error) setError(d.error); else { setComparison(d.comparison); loadTestData() }
     } catch { setError('เปรียบเทียบไม่ได้') }
     finally { setComparing(false) }
+  }
+
+  async function applyReallocation() {
+    if (applyingAB || !comparison) return
+    setApplyingAB(true)
+    try {
+      const res = await fetch(`/api/ads/ab-test/${testId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comparison }),
+      })
+      const d = await res.json()
+      if (!res.ok || d.error) {
+        setError(d.error || 'เกิดข้อผิดพลาด')
+      } else {
+        setApplied(true)
+        const successCount = d.actions?.filter((a: any) => a.success).length || 0
+        alert(`✅ จัดสรรงบตาม AI สำเร็จ ${successCount} รายการ\n\n${d.actions?.map((a: any) => `${a.label}: ${a.action}`).join('\n')}`)
+        loadTestData()
+      }
+    } catch { setError('ไม่สามารถดำเนินการได้') }
+    finally { setApplyingAB(false) }
   }
 
   function bestOf(variants: any[], key: string, mode: 'max'|'min' = 'max') {
@@ -1146,7 +1222,57 @@ function ABTestView({ testId, onClose }: { testId: string; onClose: () => void }
               {comparison?.shouldReallocate && (
                 <div style={{ background: YELLOW_L, border: `1.5px solid rgba(217,119,6,0.25)`, borderRadius: 12, padding: '12px 16px' }}>
                   <p style={{ fontSize: 12, color: YELLOW, fontWeight: 800, margin: '0 0 4px' }}>แนะนำจัดสรรงบใหม่</p>
-                  <p style={{ fontSize: 12, color: MUTED, margin: 0, fontWeight: 500 }}>{comparison.reallocationPlan}</p>
+                  <p style={{ fontSize: 12, color: MUTED, margin: '0 0 10px', fontWeight: 500 }}>{comparison.reallocationPlan}</p>
+                  {!applied ? (
+                    <button
+                      onClick={applyReallocation}
+                      disabled={applyingAB}
+                      style={{
+                        width: '100%', padding: '10px 16px', borderRadius: 10, border: 'none',
+                        cursor: applyingAB ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                        background: applyingAB ? '#a5b4fc' : 'linear-gradient(135deg, #d97706, #f59e0b)',
+                        color: 'white', boxShadow: '0 4px 14px rgba(217,119,6,0.35)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                        transition: 'all 0.18s',
+                      }}
+                    >
+                      {applyingAB ? (
+                        <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> กำลังจัดสรรงบ...</>
+                      ) : (
+                        <><CheckCircle size={14} /> จัดสรรงบตาม AI แนะนำ</>
+                      )}
+                    </button>
+                  ) : (
+                    <div style={{ fontSize: 12, color: GREEN, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <CheckCircle size={14} /> จัดสรรงบตาม AI เรียบร้อยแล้ว
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Per-variant apply buttons */}
+              {comparison && !comparison.shouldReallocate && comparison.variants?.some((cv: any) => cv.verdict !== 'keep_running') && !applied && (
+                <div style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: `1.5px solid rgba(67,56,202,0.2)`, borderRadius: 12, padding: '12px 16px' }}>
+                  <p style={{ fontSize: 12, color: PRIMARY, fontWeight: 800, margin: '0 0 8px' }}>ดำเนินการตาม AI</p>
+                  <button
+                    onClick={applyReallocation}
+                    disabled={applyingAB}
+                    style={{
+                      width: '100%', padding: '10px 16px', borderRadius: 10, border: 'none',
+                      cursor: applyingAB ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                      background: applyingAB ? '#a5b4fc' : 'linear-gradient(135deg, #4338ca, #818cf8)',
+                      color: 'white', boxShadow: '0 4px 14px rgba(67,56,202,0.35)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    }}
+                  >
+                    {applyingAB ? (
+                      <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> กำลังดำเนินการ...</>
+                    ) : (
+                      <><CheckCircle size={14} /> ทำตาม AI แนะนำทั้งหมด</>
+                    )}
+                  </button>
                 </div>
               )}
             </>
