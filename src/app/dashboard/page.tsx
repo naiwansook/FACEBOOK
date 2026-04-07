@@ -216,9 +216,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-          <button onClick={() => setShowABModal(true)} style={{ ...btnPrimary, padding: '9px 18px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7, background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)', boxShadow: '0 6px 22px rgba(124,58,237,0.42)' }}>
-            <Zap size={15} /> AI A/B Test
-          </button>
           <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '9px 18px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7 }}>
             <Plus size={15} /> ยิงแอดใหม่
           </button>
