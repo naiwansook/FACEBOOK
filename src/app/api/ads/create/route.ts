@@ -191,11 +191,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 10. Create Ad Set ─────────────────────────────────────
-    let fbAdSetId: string
+    // ── 10. Create Ad Set (auto-detect working optimization_goal) ──
+    let fbAdSetId: string = ''
+    const OPTIMIZATION_GOALS_TO_TRY = [
+      'POST_ENGAGEMENT', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS',
+      'ENGAGED_USERS', 'CONVERSATIONS', 'THRUPLAY', 'LANDING_PAGE_VIEWS',
+      'AD_RECALL_LIFT', 'PAGE_LIKES',
+    ]
     try {
       const dailyBudgetSatang = Math.round(Number(dailyBudget) * 100)
-      const adsetBody: any = {
+      const baseAdsetBody: any = {
         name: `${campaignName} - Ad Set`,
         campaign_id: fbCampaignId,
         daily_budget: dailyBudgetSatang,
@@ -203,21 +208,58 @@ export async function POST(req: Request) {
         start_time: startDate || new Date().toISOString(),
         end_time: endDate,
         billing_event: 'IMPRESSIONS',
-        optimization_goal: 'POST_ENGAGEMENT',
         targeting,
         promoted_object: { page_id: pageId },
         access_token: userToken,
         status: 'ACTIVE',
       }
 
-      const r = await fetch(`${FB}/${adAccountId}/adsets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(adsetBody),
-      })
-      const d = await r.json()
-      if (d.error) return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${d.error.error_user_msg || d.error.message} [${JSON.stringify(d.error)}]` }, { status: 400 })
-      fbAdSetId = d.id
+      let lastError: any = null
+      let adsetCreated = false
+
+      for (const optGoal of OPTIMIZATION_GOALS_TO_TRY) {
+        const body = { ...baseAdsetBody, optimization_goal: optGoal }
+        const r = await fetch(`${FB}/${adAccountId}/adsets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const d = await r.json()
+
+        if (!d.error) {
+          fbAdSetId = d.id
+          adsetCreated = true
+          console.log(`✅ AdSet created with optimization_goal: ${optGoal}`)
+          break
+        }
+
+        // If error is about optimization_goal, try next one
+        if (d.error.error_subcode === 2490408) {
+          lastError = d.error
+          continue
+        }
+
+        // Different error — stop trying
+        return NextResponse.json({
+          error: `สร้าง Ad Set ไม่ได้: ${d.error.error_user_msg || d.error.message} [${JSON.stringify(d.error)}]`
+        }, { status: 400 })
+      }
+
+      if (!adsetCreated) {
+        // All goals failed — also try without optimization_goal
+        const r = await fetch(`${FB}/${adAccountId}/adsets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(baseAdsetBody),
+        })
+        const d = await r.json()
+        if (d.error) {
+          return NextResponse.json({
+            error: `สร้าง Ad Set ไม่ได้ (ลองทุก optimization_goal แล้ว): ${lastError?.error_user_msg || lastError?.message} [tried: ${OPTIMIZATION_GOALS_TO_TRY.join(', ')}]`
+          }, { status: 400 })
+        }
+        fbAdSetId = d.id
+      }
     } catch (e: any) {
       return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${e.message}` }, { status: 500 })
     }

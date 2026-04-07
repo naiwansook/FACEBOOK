@@ -153,21 +153,45 @@ export async function createAdSet(
     status: 'ACTIVE',
   }
 
-  // Default optimization_goal for post boosting
-  adsetBody.optimization_goal = opts.optimizationGoal || 'POST_ENGAGEMENT'
-
   if (opts.destinationType) {
     adsetBody.destination_type = opts.destinationType
   }
 
-  const res = await fetch(`${FB_API}/${adAccountId}/adsets`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(adsetBody),
-  })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.id as string
+  // Auto-detect working optimization_goal by trying multiple options
+  const goalsToTry = opts.optimizationGoal
+    ? [opts.optimizationGoal]
+    : [
+        'POST_ENGAGEMENT', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS',
+        'ENGAGED_USERS', 'CONVERSATIONS', 'THRUPLAY', 'LANDING_PAGE_VIEWS',
+        'AD_RECALL_LIFT', 'PAGE_LIKES',
+      ]
+
+  let lastError: any = null
+  for (const goal of goalsToTry) {
+    const body = { ...adsetBody, optimization_goal: goal }
+    const res = await fetch(`${FB_API}/${adAccountId}/adsets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+
+    if (!data.error) {
+      console.log(`✅ AdSet created with optimization_goal: ${goal}`)
+      return data.id as string
+    }
+
+    // If error is about optimization_goal (subcode 2490408), try next
+    if (data.error.error_subcode === 2490408) {
+      lastError = data.error
+      continue
+    }
+
+    // Different error — throw immediately
+    throw new Error(data.error.error_user_msg || data.error.message)
+  }
+
+  throw new Error(lastError?.error_user_msg || lastError?.message || 'ไม่พบ optimization_goal ที่ใช้ได้')
 }
 
 /** สร้าง Ad Creative + Ad */
