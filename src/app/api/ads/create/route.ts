@@ -8,56 +8,15 @@ export const dynamic = 'force-dynamic'
 
 const FB = 'https://graph.facebook.com/v19.0'
 
-// ── Goal → Facebook API mapping (safe for post boosting) ─────
-const GOAL_CONFIG: Record<string, {
-  objective: string
-  optimization_goal: string
-  billing_event: string
-  destination_type?: string
-  label: string
-}> = {
-  auto_engagement: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'อัตโนมัติ - เพิ่มการมีส่วนร่วม',
-  },
-  messages: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เพิ่มจำนวนข้อความ',
-  },
-  sales_messages: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เพิ่มยอดขายผ่านข้อความ',
-  },
-  leads_messages: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เก็บข้อมูลลูกค้าผ่านข้อความ',
-  },
-  traffic: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เพิ่มผู้เยี่ยมชมเว็บไซต์',
-  },
-  calls: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เพิ่มการมีส่วนร่วม (โทร)',
-  },
-  reach: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-    label: 'เข้าถึงคนมากสุด',
-  },
+// ── Goal labels for UI display ──────────────────────────────
+const GOAL_LABELS: Record<string, string> = {
+  auto_engagement: 'อัตโนมัติ - เพิ่มการมีส่วนร่วม',
+  messages: 'เพิ่มจำนวนข้อความ',
+  sales_messages: 'เพิ่มยอดขายผ่านข้อความ',
+  leads_messages: 'เก็บข้อมูลลูกค้าผ่านข้อความ',
+  traffic: 'เพิ่มผู้เยี่ยมชมเว็บไซต์',
+  calls: 'เพิ่มการมีส่วนร่วม (โทร)',
+  reach: 'เข้าถึงคนมากสุด',
 }
 
 export async function POST(req: Request) {
@@ -88,9 +47,8 @@ export async function POST(req: Request) {
       pageName: pageName || '',
     })
 
-    // Use user-selected goal, or fallback to AI suggestion
-    const goalKey = goal && GOAL_CONFIG[goal] ? goal : 'auto_engagement'
-    const goalConfig = GOAL_CONFIG[goalKey]
+    // Use user-selected goal label
+    const goalKey = goal && GOAL_LABELS[goal] ? goal : 'auto_engagement'
 
     // ── 3. Supabase ───────────────────────────────────────────
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -217,7 +175,7 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: campaignName,
-          objective: goalConfig.objective,
+          objective: 'OUTCOME_ENGAGEMENT',
           status: 'ACTIVE',
           buying_type: 'AUCTION',
           special_ad_categories: [],
@@ -243,17 +201,11 @@ export async function POST(req: Request) {
         bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
         start_time: startDate || new Date().toISOString(),
         end_time: endDate,
-        billing_event: goalConfig.billing_event,
-        optimization_goal: goalConfig.optimization_goal,
+        billing_event: 'IMPRESSIONS',
         targeting,
         promoted_object: { page_id: pageId },
         access_token: userToken,
         status: 'ACTIVE',
-      }
-
-      // Messages goal needs destination_type
-      if (goalConfig.destination_type) {
-        adsetBody.destination_type = goalConfig.destination_type
       }
 
       const r = await fetch(`${FB}/${adAccountId}/adsets`, {

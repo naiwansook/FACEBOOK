@@ -136,7 +136,6 @@ export async function createAdSet(
     start_time: opts.startTime,
     end_time: opts.endTime,
     billing_event: opts.billingEvent || 'IMPRESSIONS',
-    optimization_goal: opts.optimizationGoal || 'ENGAGED_USERS',
     targeting: {
       age_min: opts.targeting.ageMin,
       age_max: opts.targeting.ageMax,
@@ -150,6 +149,11 @@ export async function createAdSet(
     promoted_object: { page_id: opts.pageId },
     access_token: pageToken,
     status: 'ACTIVE',
+  }
+
+  // Only send optimization_goal if explicitly provided
+  if (opts.optimizationGoal) {
+    adsetBody.optimization_goal = opts.optimizationGoal
   }
 
   if (opts.destinationType) {

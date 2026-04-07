@@ -6,16 +6,7 @@ import { generateTestVariants, type PostContext } from '@/lib/ai-analyzer'
 
 export const dynamic = 'force-dynamic'
 
-// ── Goal → Facebook API mapping (safe for post boosting) ─────
-const GOAL_CFG: Record<string, { objective: string; optimization_goal: string; billing_event: string; destination_type?: string }> = {
-  auto_engagement: { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  messages:        { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  sales_messages:  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  leads_messages:  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  traffic:         { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  calls:           { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-  reach:           { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS', billing_event: 'IMPRESSIONS' },
-}
+// All post-boost campaigns use OUTCOME_ENGAGEMENT — let FB pick optimization
 
 export async function POST(req: Request) {
   try {
@@ -141,13 +132,10 @@ export async function POST(req: Request) {
 
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
-        // Use user-selected goal or fallback
-        const goalCfg = GOAL_CFG[goal] || GOAL_CFG.auto_engagement
+        // Create Facebook Campaign — always OUTCOME_ENGAGEMENT for post boost
+        const fbCampaignId = await createCampaign(adAccountId, pageToken, campaignName, 'OUTCOME_ENGAGEMENT')
 
-        // Create Facebook Campaign
-        const fbCampaignId = await createCampaign(adAccountId, pageToken, campaignName, goalCfg.objective)
-
-        // Create Ad Set with variant-specific targeting + goal config
+        // Create Ad Set — don't send optimization_goal, let Facebook pick default
         const fbAdSetId = await createAdSet(adAccountId, pageToken, fbCampaignId, {
           name: `${variant.label} - Ad Set`,
           dailyBudget: variantBudget,
@@ -161,9 +149,6 @@ export async function POST(req: Request) {
             interests: variant.targeting.interests,
           },
           pageId,
-          optimizationGoal: goalCfg.optimization_goal,
-          billingEvent: goalCfg.billing_event,
-          destinationType: goalCfg.destination_type,
         })
 
         // Create Ad
