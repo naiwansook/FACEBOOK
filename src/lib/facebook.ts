@@ -317,16 +317,17 @@ export async function getRealStatus(
 /** อัปเดต Daily Budget */
 export async function updateAdSetBudget(
   adSetId: string,
-  pageToken: string,
+  accessToken: string,
   dailyBudget: number
 ) {
+  const params = new URLSearchParams({
+    daily_budget: String(Math.round(dailyBudget * 100)),
+    access_token: accessToken,
+  })
   const res = await fetch(`${FB_API}/${adSetId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      daily_budget: Math.round(dailyBudget * 100),
-      access_token: pageToken,
-    }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
   })
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
