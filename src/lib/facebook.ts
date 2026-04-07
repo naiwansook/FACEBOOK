@@ -145,6 +145,7 @@ export async function createAdSet(
       flexible_spec: validInterests.length > 0
         ? [{ interests: validInterests }]
         : undefined,
+      targeting_automation: { advantage_audience: 0 },
     },
     promoted_object: { page_id: opts.pageId },
     access_token: pageToken,
