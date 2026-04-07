@@ -180,6 +180,7 @@ export async function POST(req: Request) {
           objective: 'OUTCOME_ENGAGEMENT',
           status: 'ACTIVE',
           special_ad_categories: [],
+          is_adset_budget_sharing_enabled: false,
           access_token: userToken,
         }),
       })

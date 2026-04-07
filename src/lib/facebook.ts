@@ -98,6 +98,7 @@ export async function createCampaign(
       objective,
       status: 'ACTIVE',
       special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
       access_token: pageToken,
     }),
   })
