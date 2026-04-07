@@ -199,6 +199,7 @@ export async function POST(req: Request) {
         name: `${campaignName} - Ad Set`,
         campaign_id: fbCampaignId,
         daily_budget: dailyBudgetSatang,
+        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
         start_time: startDate || new Date().toISOString(),
         end_time: endDate,
         billing_event: 'IMPRESSIONS',

@@ -134,6 +134,7 @@ export async function createAdSet(
     name: opts.name,
     campaign_id: campaignId,
     daily_budget: Math.round(opts.dailyBudget * 100), // convert to satang
+    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     start_time: opts.startTime,
     end_time: opts.endTime,
     billing_event: opts.billingEvent || 'IMPRESSIONS',
