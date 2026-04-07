@@ -209,37 +209,56 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 11. Create Creative + Ad ──────────────────────────────
+    // ── 11. Create Ad (inline creative with object_story_id) ───
     let fbAdId: string
     try {
-      const creativeRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `Creative - ${campaignName}`,
-          object_story_id: postId,
-          access_token: pageToken,
-        }),
-      })
-      const creativeData = await creativeRes.json()
-      if (creativeData.error) {
-        return NextResponse.json({ error: `สร้าง Creative ไม่ได้: ${creativeData.error.error_user_msg || creativeData.error.message}` }, { status: 400 })
-      }
-
+      // สร้าง Ad พร้อม creative inline — ไม่ต้องสร้าง creative แยก
+      // ใช้ pageToken เพราะ page เป็นเจ้าของโพสต์
       const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: `${campaignName} - Ad`,
           adset_id: fbAdSetId,
-          creative: { creative_id: creativeData.id },
+          creative: { object_story_id: postId },
           status: 'ACTIVE',
           access_token: pageToken,
         }),
       })
       const adData = await adRes.json()
-      if (adData.error) return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adData.error.error_user_msg || adData.error.message}` }, { status: 400 })
-      fbAdId = adData.id
+      if (adData.error) {
+        // Fallback: ลองสร้าง creative แยกแล้วค่อยสร้าง ad
+        const creativeRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `Creative - ${campaignName}`,
+            object_story_id: postId,
+            access_token: pageToken,
+          }),
+        })
+        const creativeData = await creativeRes.json()
+        if (creativeData.error) {
+          return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adData.error.error_user_msg || adData.error.message} | Creative: ${creativeData.error.message}` }, { status: 400 })
+        }
+
+        const adRes2 = await fetch(`${FB}/${adAccountId}/ads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `${campaignName} - Ad`,
+            adset_id: fbAdSetId,
+            creative: { creative_id: creativeData.id },
+            status: 'ACTIVE',
+            access_token: pageToken,
+          }),
+        })
+        const adData2 = await adRes2.json()
+        if (adData2.error) return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adData2.error.error_user_msg || adData2.error.message}` }, { status: 400 })
+        fbAdId = adData2.id
+      } else {
+        fbAdId = adData.id
+      }
     } catch (e: any) {
       return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${e.message}` }, { status: 500 })
     }
