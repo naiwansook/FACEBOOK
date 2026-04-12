@@ -797,6 +797,7 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
   const [selectedPost, setSelectedPost] = useState<any>(null)
   const [budget, setBudget] = useState(200)
   const [days, setDays] = useState(7)
+  const [selectedGoal, setSelectedGoal] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loadingPosts, setLoadingPosts] = useState(false)
   const [error, setError] = useState('')
@@ -827,16 +828,17 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
           days: days || undefined,
           existingReactions: selectedPost.reactions?.summary?.total_count || 0,
           existingShares: selectedPost.shares?.count || 0,
+          goal: selectedGoal || undefined,
         }),
       })
       const d = await res.json(); setSubmitting(false)
       if (!res.ok || d.error) { setError(d.error || 'เกิดข้อผิดพลาด'); return }
-      setAiPlan(d); setStep(4)
+      setAiPlan(d); setStep(5)
     } catch (err: any) { setSubmitting(false); setError(err.message || 'เกิดข้อผิดพลาด') }
   }
 
-  const totalSteps = 4
-  const stepNames = ['เลือก Page', 'เลือกโพสต์', 'ตั้งงบ & ยิงแอด', 'AI สร้างแอดแล้ว!']
+  const totalSteps = 5
+  const stepNames = ['เลือก Page', 'เลือกโพสต์', 'เป้าหมาย', 'ตั้งงบ & ยิงแอด', 'AI สร้างแอดแล้ว!']
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 14px', background: SURFACE2, border: `1.5px solid ${BORDER}`, borderRadius: 10, color: TEXT, fontSize: 14, fontWeight: 700, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }
 
   return (
@@ -884,7 +886,7 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
               {loadingPosts ? <div style={{ textAlign: 'center', padding: 36, color: MUTED, fontSize: 13 }}>⏳ กำลังโหลด...</div>
                 : posts.length === 0 ? <div style={{ textAlign: 'center', padding: 36, color: MUTED, fontSize: 13, fontWeight: 600 }}>ไม่พบโพสต์</div>
                   : posts.map((p: any) => (
-                    <button key={p.id} onClick={() => { setSelectedPost(p); setStep(3) }}
+                    <button key={p.id} onClick={() => { setSelectedPost(p); setStep(3) /* go to goal */ }}
                       style={{ width: '100%', padding: '13px 15px', marginBottom: 8, background: 'linear-gradient(145deg, #ffffff, #f5f7ff)', border: `1.5px solid ${BORDER}`, borderRadius: 13, color: TEXT, cursor: 'pointer', textAlign: 'left', fontSize: 13, display: 'flex', gap: 11, alignItems: 'flex-start', fontFamily: 'inherit', boxShadow: SHADOW_SM, transition: 'all 0.18s' }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = BORDER2; e.currentTarget.style.background = PRIMARY_LIGHT }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f7ff)' }}>
@@ -898,10 +900,38 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
             </div>
           )}
 
-          {/* Step 3: Budget & Submit */}
+          {/* Step 3: Goal Selection */}
           {step === 3 && (
             <div>
               <button onClick={() => setStep(2)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
+              <p style={{ fontSize: 13, fontWeight: 800, margin: '0 0 4px' }}>เป้าหมายในการยิงแอดครั้งนี้</p>
+              <p style={{ fontSize: 11, color: MUTED, marginBottom: 14, fontWeight: 500 }}>เลือกสิ่งที่ต้องการเน้น — ระบบจะตั้งค่าและแสดงผลตามเป้าหมายนี้</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {GOALS.map(g => (
+                  <button key={g.id} onClick={() => { setSelectedGoal(g.id); setStep(4) }}
+                    style={{
+                      width: '100%', padding: '14px 16px', border: `1.5px solid ${selectedGoal === g.id ? g.color + '66' : BORDER}`,
+                      borderRadius: 14, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      background: selectedGoal === g.id ? g.bg : 'linear-gradient(145deg, #ffffff, #f5f7ff)',
+                      boxShadow: SHADOW_SM, transition: 'all 0.18s', display: 'flex', alignItems: 'center', gap: 12,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + '66'; e.currentTarget.style.background = g.bg }}
+                    onMouseLeave={e => { if (selectedGoal !== g.id) { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = 'linear-gradient(145deg, #ffffff, #f5f7ff)' } }}>
+                    <span style={{ fontSize: 24 }}>{g.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: g.color }}>{g.label}</div>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 500, marginTop: 2 }}>{g.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Budget & Submit */}
+          {step === 4 && (
+            <div>
+              <button onClick={() => setStep(3)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer', marginBottom: 13, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}><ArrowLeft size={13} /> กลับ</button>
 
               {/* Selected post */}
               <div style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: `1.5px solid rgba(67,56,202,0.2)`, borderRadius: 13, padding: '11px 15px', marginBottom: 16, display: 'flex', gap: 11, alignItems: 'flex-start' }}>
@@ -911,6 +941,17 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
                   <p style={{ fontSize: 13, margin: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>{selectedPost?.message || selectedPost?.story || selectedPost?.id}</p>
                 </div>
               </div>
+
+              {/* Selected goal badge */}
+              {selectedGoal && (() => { const g = goalById(selectedGoal); return (
+                <div style={{ background: g.bg, border: `1.5px solid ${g.color}33`, borderRadius: 11, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>{g.icon}</span>
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: g.color }}>{g.label}</span>
+                    <span style={{ fontSize: 10, color: MUTED, marginLeft: 8, fontWeight: 500 }}>{g.desc}</span>
+                  </div>
+                </div>
+              )})()}
 
               {/* AI info */}
               <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 16 }}>
@@ -959,8 +1000,8 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
             </div>
           )}
 
-          {/* Step 4: AI Results */}
-          {step === 4 && aiPlan && (
+          {/* Step 5: AI Results */}
+          {step === 5 && aiPlan && (
             <div>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
                 <div style={{ fontSize: 48, marginBottom: 8 }}>✅</div>
