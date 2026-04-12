@@ -55,6 +55,24 @@ function fmtDate(d?: string) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 }
+function fmtDateTime(d?: string) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+function timeRemaining(endDateStr?: string): { text: string; color: string; urgent: boolean } {
+  if (!endDateStr) return { text: '—', color: MUTED, urgent: false }
+  const now = new Date().getTime()
+  const end = new Date(endDateStr).getTime()
+  const diff = end - now
+  if (diff <= 0) return { text: 'หมดเวลาแล้ว', color: RED, urgent: true }
+  const totalHours = diff / (1000 * 60 * 60)
+  const d = Math.floor(totalHours / 24)
+  const h = Math.floor(totalHours % 24)
+  if (d > 3) return { text: `เหลือ ${d} วัน`, color: GREEN, urgent: false }
+  if (d >= 1) return { text: `เหลือ ${d} วัน ${h} ชม.`, color: YELLOW, urgent: false }
+  if (totalHours >= 1) return { text: `เหลือ ${h} ชม.`, color: RED, urgent: true }
+  return { text: 'เหลือไม่ถึง 1 ชม.', color: RED, urgent: true }
+}
 
 export default function Dashboard() {
   const { data: session } = useSession()
@@ -376,6 +394,9 @@ export default function Dashboard() {
                                 {fmt(v.impressions)} imp • {fmt(v.clicks)} clicks
                               </div>
                             )}
+                            {v.endTime && (() => { const tr = timeRemaining(v.endTime); return (
+                              <div style={{ fontSize: 9, color: tr.color, fontWeight: 700, marginTop: 3 }}>{tr.text}</div>
+                            ) })()}
                           </div>
                         )
                       })}
@@ -578,7 +599,12 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, appl
           <div style={{ fontSize: 11, color: MUTED, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, color: GREEN, background: GREEN_L, padding: '2px 10px', borderRadius: 999 }}>฿{fmt(c.daily_budget)}/วัน</span>
             {campaignGoal && <span style={{ fontWeight: 700, color: campaignGoal.color, background: campaignGoal.bg, padding: '2px 10px', borderRadius: 999 }}>{campaignGoal.icon} {campaignGoal.label}</span>}
-            <span>{fmtDate(c.start_time)} — {fmtDate(c.end_time)}</span>
+            {(() => { const tr = timeRemaining(c.end_time); return (
+              <span style={{ fontWeight: 700, color: tr.color, background: tr.urgent ? RED_L : 'transparent', padding: tr.urgent ? '2px 10px' : '0', borderRadius: 999 }}>{tr.text}</span>
+            ) })()}
+          </div>
+          <div style={{ fontSize: 10, color: MUTED, marginTop: 3, fontWeight: 500 }}>
+            เริ่ม {fmtDateTime(c.start_time)} — สิ้นสุด {fmtDateTime(c.end_time)}
           </div>
         </a>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
