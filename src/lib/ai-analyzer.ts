@@ -5,6 +5,35 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+/** Safely parse JSON from AI response, with fallback */
+function safeParseJSON(raw: string, fallback: any): any {
+  const cleaned = raw.replace(/```json|```/g, '').trim()
+  // Extract JSON object
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return fallback
+
+  try {
+    return JSON.parse(jsonMatch[0])
+  } catch {
+    // Try to fix truncated JSON
+    let fixed = jsonMatch[0]
+    // Close unclosed strings
+    const quotes = (fixed.match(/"/g) || []).length
+    if (quotes % 2 !== 0) fixed += '"'
+    // Close brackets/braces
+    const openBrackets = (fixed.match(/\[/g) || []).length - (fixed.match(/\]/g) || []).length
+    const openBraces = (fixed.match(/\{/g) || []).length - (fixed.match(/\}/g) || []).length
+    for (let i = 0; i < openBrackets; i++) fixed += ']'
+    for (let i = 0; i < openBraces; i++) fixed += '}'
+    try {
+      return JSON.parse(fixed)
+    } catch {
+      console.error('[ai-analyzer] JSON parse failed, using fallback. Raw:', raw.slice(0, 200))
+      return fallback
+    }
+  }
+}
+
 export interface AdMetrics {
   campaignName: string
   spend: number
@@ -188,7 +217,11 @@ export async function generateAutoTargeting(context: {
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
+  const parsed = safeParseJSON(text, {
+    objective: 'POST_ENGAGEMENT',
+    targeting: { ageMin: 20, ageMax: 45, genders: [], geoLocations: { countries: ['TH'] } },
+    reasoning: 'ใช้ค่าเริ่มต้น เนื่องจาก AI ตอบกลับไม่สมบูรณ์',
+  })
 
   return {
     objective: parsed.objective || 'POST_ENGAGEMENT',
@@ -294,12 +327,21 @@ export async function generateTestVariants(context: PostContext): Promise<ABTest
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
+    max_tokens: 3000,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
+  const parsed = safeParseJSON(text, {
+    postAnalysis: 'AI ไม่สามารถวิเคราะห์ได้ ใช้ค่าเริ่มต้น',
+    recommendedBudget: 200,
+    recommendedDays: 7,
+    variants: [
+      { label: 'A: กลุ่มทั่วไป', strategy: 'กลุ่มเป้าหมายกว้าง', objective: 'POST_ENGAGEMENT', targeting: { ageMin: 20, ageMax: 45, genders: [], geoLocations: { countries: ['TH'] } }, budgetPercent: 40, reasoning: 'กลุ่มกว้างเพื่อทดสอบ' },
+      { label: 'B: วัยรุ่น', strategy: 'เน้นวัยรุ่น', objective: 'POST_ENGAGEMENT', targeting: { ageMin: 18, ageMax: 28, genders: [], geoLocations: { countries: ['TH'] } }, budgetPercent: 30, reasoning: 'ทดสอบกลุ่มวัยรุ่น' },
+      { label: 'C: คนทำงาน', strategy: 'เน้นวัยทำงาน', objective: 'POST_ENGAGEMENT', targeting: { ageMin: 28, ageMax: 50, genders: [], geoLocations: { countries: ['TH'] } }, budgetPercent: 30, reasoning: 'ทดสอบกลุ่มวัยทำงาน' },
+    ],
+  })
 
   return {
     postAnalysis: parsed.postAnalysis,
@@ -412,7 +454,13 @@ ${variantsInfo}
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
+  const parsed = safeParseJSON(text, {
+    overallSummary: 'ยังมีข้อมูลไม่เพียงพอ รอให้แอดวิ่งต่อ',
+    variants: [],
+    bestVariant: '',
+    worstVariant: '',
+    shouldReallocate: false,
+  })
 
   return {
     overallSummary: parsed.overallSummary,
