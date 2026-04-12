@@ -185,6 +185,7 @@ export async function POST(req: Request) {
             status: 'ACTIVE',
             buying_type: 'AUCTION',
             special_ad_categories: [],
+            is_adset_budget_sharing_enabled: false,
             access_token: userToken,
           }),
         })
