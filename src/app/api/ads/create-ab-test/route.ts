@@ -161,6 +161,7 @@ export async function POST(req: Request) {
     const endDateStr = endDate.toISOString()
 
     const createdVariants = []
+    const variantErrors: string[] = []
 
     for (const variant of testPlan.variants) {
       try {
@@ -344,8 +345,9 @@ export async function POST(req: Request) {
           fbCampaignId,
         })
       } catch (variantErr: any) {
-        console.error(`Error creating variant ${variant.label}:`, variantErr.message)
-        // Continue with other variants
+        const errMsg = `${variant.label}: ${variantErr.message}`
+        console.error(`Error creating variant:`, errMsg)
+        variantErrors.push(errMsg)
       }
     }
 
@@ -353,7 +355,8 @@ export async function POST(req: Request) {
       // Clean up test group if no variants created
       await supabase.from('ab_test_groups').delete().eq('id', testGroup.id)
       return NextResponse.json({
-        error: 'ไม่สามารถสร้าง variant ได้เลย กรุณาตรวจสอบ Ad Account และลองใหม่',
+        error: `สร้าง variant ไม่ได้: ${variantErrors[0] || 'ไม่ทราบสาเหตุ'}`,
+        allErrors: variantErrors,
       }, { status: 500 })
     }
 
