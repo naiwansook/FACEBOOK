@@ -8,28 +8,13 @@ export const dynamic = 'force-dynamic'
 
 const FB = 'https://graph.facebook.com/v19.0'
 
-// ── Goal → Facebook API mapping (same as create/route.ts proven working config) ───
-const GOAL_CONFIG: Record<string, {
-  objective: string
-  optimization_goal: string
-  billing_event: string
-}> = {
-  engagement: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-  },
-  traffic: {
-    objective: 'OUTCOME_TRAFFIC',
-    optimization_goal: 'LINK_CLICKS',
-    billing_event: 'IMPRESSIONS',
-  },
-  reach: {
-    objective: 'OUTCOME_AWARENESS',
-    optimization_goal: 'REACH',
-    billing_event: 'IMPRESSIONS',
-  },
-}
+// ── Full campaign configs to try in order (objective + adset must match) ───
+const CAMPAIGN_CONFIGS = [
+  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS', destination_type: 'ON_POST' },
+  { objective: 'OUTCOME_AWARENESS',  optimization_goal: 'REACH',            billing_event: 'IMPRESSIONS' },
+  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS',    billing_event: 'IMPRESSIONS' },
+  { objective: 'OUTCOME_TRAFFIC',    optimization_goal: 'LINK_CLICKS',      billing_event: 'IMPRESSIONS' },
+]
 
 export async function POST(req: Request) {
   try {
@@ -170,28 +155,6 @@ export async function POST(req: Request) {
 
         const campaignName = `[AB Test] ${variant.label} — ${(postMessage || postId).slice(0, 30)}`
 
-        // Use single proven working objective for ALL variants
-        // Only targeting differs between variants (age, gender, interests)
-        const goalConfig = GOAL_CONFIG.engagement
-
-        // ── Create Campaign (inline, proven working) ──────────
-        const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: campaignName,
-            objective: goalConfig.objective,
-            status: 'ACTIVE',
-            buying_type: 'AUCTION',
-            special_ad_categories: [],
-            is_adset_budget_sharing_enabled: false,
-            access_token: userToken,
-          }),
-        })
-        const campData = await campRes.json()
-        if (campData.error) throw new Error(`Campaign: ${campData.error.error_user_msg || campData.error.message}`)
-        const fbCampaignId = campData.id
-
         // ── Build Targeting (validate interests via search API) ──
         let validInterests: { id: string; name: string }[] = []
         if (variant.targeting.interests && variant.targeting.interests.length > 0) {
@@ -217,39 +180,70 @@ export async function POST(req: Request) {
           targeting.flexible_spec = [{ interests: validInterests }]
         }
 
-        // ── Create Ad Set (try multiple optimization goals) ────────────
+        // ── Try full campaign+adset configs until one works ──────
         const dailyBudgetSatang = Math.round(variantBudget * 100)
-        const optimizationGoals = ['POST_ENGAGEMENT', 'IMPRESSIONS', 'ENGAGED_USERS', 'REACH']
-        let fbAdSetId: string = ''
-        let lastAdsetError = ''
+        let fbCampaignId = ''
+        let fbAdSetId = ''
+        let lastError = ''
 
-        for (const optGoal of optimizationGoals) {
-          const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
+        for (const cfg of CAMPAIGN_CONFIGS) {
+          // Create Campaign with this objective
+          const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              name: `${variant.label} - Ad Set`,
-              campaign_id: fbCampaignId,
-              daily_budget: dailyBudgetSatang,
-              bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-              start_time: startDate,
-              end_time: endDateStr,
-              billing_event: 'IMPRESSIONS',
-              optimization_goal: optGoal,
-              targeting,
-              promoted_object: { page_id: pageId },
-              access_token: userToken,
+              name: campaignName,
+              objective: cfg.objective,
               status: 'ACTIVE',
+              buying_type: 'AUCTION',
+              special_ad_categories: [],
+              access_token: userToken,
             }),
+          })
+          const campData = await campRes.json()
+          if (campData.error) {
+            lastError = `Campaign(${cfg.objective}): ${campData.error.error_user_msg || campData.error.message}`
+            continue
+          }
+          const thisCampaignId = campData.id
+
+          // Create Ad Set with matching optimization goal
+          const adsetBody: any = {
+            name: `${variant.label} - Ad Set`,
+            campaign_id: thisCampaignId,
+            daily_budget: dailyBudgetSatang,
+            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+            start_time: startDate,
+            end_time: endDateStr,
+            billing_event: cfg.billing_event,
+            optimization_goal: cfg.optimization_goal,
+            targeting,
+            promoted_object: { page_id: pageId },
+            access_token: userToken,
+            status: 'ACTIVE',
+          }
+          if (cfg.destination_type) adsetBody.destination_type = cfg.destination_type
+
+          const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(adsetBody),
           })
           const adsetData = await adsetRes.json()
           if (!adsetData.error) {
+            fbCampaignId = thisCampaignId
             fbAdSetId = adsetData.id
             break
           }
-          lastAdsetError = adsetData.error.error_user_msg || adsetData.error.message
+          // AdSet failed — delete the orphan campaign
+          lastError = `AdSet(${cfg.optimization_goal}): ${adsetData.error.error_user_msg || adsetData.error.message}`
+          await fetch(`${FB}/${thisCampaignId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: userToken }),
+          }).catch(() => {})
         }
-        if (!fbAdSetId) throw new Error(`AdSet: ${lastAdsetError}`)
+        if (!fbCampaignId || !fbAdSetId) throw new Error(lastError)
 
         // ── Create Ad with inline creative ──────────────────────
         // Try multiple approaches for compatibility

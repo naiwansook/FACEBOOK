@@ -8,29 +8,13 @@ export const dynamic = 'force-dynamic'
 
 const FB = 'https://graph.facebook.com/v19.0'
 
-// ── Goal → Facebook API mapping (from working version) ───────
-const GOAL_CONFIG: Record<string, {
-  objective: string
-  optimization_goal: string
-  billing_event: string
-  destination_type?: string
-}> = {
-  engagement: {
-    objective: 'OUTCOME_ENGAGEMENT',
-    optimization_goal: 'ENGAGED_USERS',
-    billing_event: 'IMPRESSIONS',
-  },
-  traffic: {
-    objective: 'OUTCOME_TRAFFIC',
-    optimization_goal: 'LINK_CLICKS',
-    billing_event: 'IMPRESSIONS',
-  },
-  reach: {
-    objective: 'OUTCOME_AWARENESS',
-    optimization_goal: 'REACH',
-    billing_event: 'IMPRESSIONS',
-  },
-}
+// ── Full campaign configs to try in order (objective + adset must match) ───
+const CAMPAIGN_CONFIGS = [
+  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS', destination_type: 'ON_POST' },
+  { objective: 'OUTCOME_AWARENESS',  optimization_goal: 'REACH',            billing_event: 'IMPRESSIONS' },
+  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS',    billing_event: 'IMPRESSIONS' },
+  { objective: 'OUTCOME_TRAFFIC',    optimization_goal: 'LINK_CLICKS',      billing_event: 'IMPRESSIONS' },
+] as { objective: string; optimization_goal: string; billing_event: string; destination_type?: string }[]
 
 export async function POST(req: Request) {
   try {
@@ -60,11 +44,7 @@ export async function POST(req: Request) {
       pageName: pageName || '',
     })
 
-    // Map AI objective to Facebook goal config (AI decides, not user)
-    const aiGoal = aiTargeting.objective === 'LINK_CLICKS' ? 'traffic'
-      : aiTargeting.objective === 'REACH' ? 'reach'
-      : 'engagement'
-    const goalConfig = GOAL_CONFIG[aiGoal] || GOAL_CONFIG.engagement
+    // AI targeting is used for targeting only; campaign config is determined by fallback logic below
 
     // ── 3. Supabase ───────────────────────────────────────────
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -188,64 +168,65 @@ export async function POST(req: Request) {
     // Facebook requires Advantage audience flag
     targeting.targeting_automation = { advantage_audience: 0 }
 
-    // ── 9. Create Campaign ────────────────────────────────────
-    let fbCampaignId: string
-    try {
-      const r = await fetch(`${FB}/${adAccountId}/campaigns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: campaignName,
-          objective: goalConfig.objective,
-          status: 'ACTIVE',
-          buying_type: 'AUCTION',
-          special_ad_categories: [],
-          is_adset_budget_sharing_enabled: false,
-          access_token: userToken,
-        }),
-      })
-      const d = await r.json()
-      if (d.error) return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${d.error.error_user_msg || d.error.message}` }, { status: 400 })
-      fbCampaignId = d.id
-    } catch (e: any) {
-      return NextResponse.json({ error: `สร้าง Campaign ไม่ได้: ${e.message}` }, { status: 500 })
-    }
-
-    // ── 10. Create Ad Set (try multiple optimization goals) ──
-    let fbAdSetId: string
+    // ── 9+10. Create Campaign + Ad Set (try full configs until one works) ──
+    let fbCampaignId: string = ''
+    let fbAdSetId: string = ''
     try {
       const dailyBudgetSatang = Math.round(Number(dailyBudget) * 100)
-      const optimizationGoals = ['POST_ENGAGEMENT', 'IMPRESSIONS', 'ENGAGED_USERS', 'REACH']
       let lastError = ''
 
-      for (const optGoal of optimizationGoals) {
+      for (const cfg of CAMPAIGN_CONFIGS) {
+        const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: campaignName,
+            objective: cfg.objective,
+            status: 'ACTIVE',
+            buying_type: 'AUCTION',
+            special_ad_categories: [],
+            access_token: userToken,
+          }),
+        })
+        const campData = await campRes.json()
+        if (campData.error) {
+          lastError = `Campaign(${cfg.objective}): ${campData.error.error_user_msg || campData.error.message}`
+          continue
+        }
+
         const adsetBody: any = {
           name: `${campaignName} - Ad Set`,
-          campaign_id: fbCampaignId,
+          campaign_id: campData.id,
           daily_budget: dailyBudgetSatang,
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
           start_time: startDate || new Date().toISOString(),
           end_time: endDate,
-          billing_event: 'IMPRESSIONS',
-          optimization_goal: optGoal,
+          billing_event: cfg.billing_event,
+          optimization_goal: cfg.optimization_goal,
           targeting,
           promoted_object: { page_id: pageId },
           access_token: userToken,
           status: 'ACTIVE',
         }
+        if (cfg.destination_type) adsetBody.destination_type = cfg.destination_type
 
-        const r = await fetch(`${FB}/${adAccountId}/adsets`, {
+        const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(adsetBody),
         })
-        const d = await r.json()
-        if (!d.error) { fbAdSetId = d.id; break }
-        lastError = d.error.error_user_msg || d.error.message
+        const adsetData = await adsetRes.json()
+        if (!adsetData.error) {
+          fbCampaignId = campData.id
+          fbAdSetId = adsetData.id
+          break
+        }
+        lastError = `AdSet(${cfg.optimization_goal}): ${adsetData.error.error_user_msg || adsetData.error.message}`
+        await fetch(`${FB}/${campData.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: userToken }) }).catch(() => {})
       }
-      if (!fbAdSetId!) return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${lastError}` }, { status: 400 })
+      if (!fbCampaignId || !fbAdSetId) return NextResponse.json({ error: `สร้างแอดไม่ได้: ${lastError}` }, { status: 400 })
     } catch (e: any) {
-      return NextResponse.json({ error: `สร้าง Ad Set ไม่ได้: ${e.message}` }, { status: 500 })
+      return NextResponse.json({ error: `สร้างแอดไม่ได้: ${e.message}` }, { status: 500 })
     }
 
     // ── 11. Create Ad (try inline creative first, fallback to separate) ──
