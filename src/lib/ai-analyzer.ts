@@ -162,7 +162,7 @@ export async function generateAutoTargeting(context: {
 2. เลือกช่วงอายุ กลุ่มเพศ ความสนใจ ที่ตรงกับเนื้อหาโพสต์มากที่สุด
 
 ## กฎ
-- ageMin ต่ำสุด 20 (กฎ Facebook ไทย ห้ามต่ำกว่า 20), ageMax สูงสุด 65
+- ageMin ต่ำสุด 18, ageMax สูงสุด 65
 - genders: [] = ทั้งหมด, [1] = ชาย, [2] = หญิง
 - countries ใช้ ['TH'] เสมอ
 - objective เลือกจาก: POST_ENGAGEMENT, LINK_CLICKS, REACH
@@ -183,21 +183,12 @@ export async function generateAutoTargeting(context: {
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
+    max_tokens: 800,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const cleaned = text.replace(/```json|```/g, '').trim()
-  let parsed: any
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[0]) } catch { parsed = {} }
-    } else { parsed = {} }
-  }
+  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
 
   return {
     objective: parsed.objective || 'POST_ENGAGEMENT',
@@ -303,49 +294,15 @@ export async function generateTestVariants(context: PostContext): Promise<ABTest
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4000,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const cleaned = text.replace(/```json|```/g, '').trim()
-
-  let parsed: any
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    // Try to extract JSON object even if there's extra text
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('AI ไม่ได้ตอบเป็น JSON')
-    try {
-      parsed = JSON.parse(jsonMatch[0])
-    } catch {
-      // Fix truncated JSON
-      let fixedJson = jsonMatch[0]
-      // Close unclosed strings
-      const lastQuote = fixedJson.lastIndexOf('"')
-      if (lastQuote > 0) fixedJson = fixedJson.substring(0, lastQuote + 1)
-      // Close arrays and objects
-      const openBrackets = (fixedJson.match(/\[/g) || []).length - (fixedJson.match(/\]/g) || []).length
-      const openBraces = (fixedJson.match(/\{/g) || []).length - (fixedJson.match(/\}/g) || []).length
-      for (let i = 0; i < openBrackets; i++) fixedJson += ']'
-      for (let i = 0; i < openBraces; i++) fixedJson += '}'
-      try {
-        parsed = JSON.parse(fixedJson)
-      } catch {
-        // Last resort: return minimal valid plan
-        parsed = {
-          postAnalysis: 'AI วิเคราะห์โพสต์ไม่สำเร็จ กรุณาลองใหม่',
-          recommendedBudget: 200,
-          recommendedDays: 7,
-          variants: [],
-        }
-      }
-    }
-  }
+  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
 
   return {
-    postAnalysis: parsed.postAnalysis || '',
+    postAnalysis: parsed.postAnalysis,
     recommendedBudget: parsed.recommendedBudget || 200,
     recommendedDays: parsed.recommendedDays || 7,
     variants: parsed.variants || [],

@@ -19,7 +19,7 @@ export async function POST(
     const { comparison } = await req.json()
 
     if (!comparison?.variants?.length) {
-      return NextResponse.json({ error: 'ไม่มีข้อมูล comparison' }, { status: 400 })
+      return NextResponse.json({ error: 'No comparison data' }, { status: 400 })
     }
 
     const { createClient } = await import('@supabase/supabase-js')
@@ -36,7 +36,7 @@ export async function POST(
       .single()
 
     if (!testGroup) {
-      return NextResponse.json({ error: 'ไม่พบ Test Group' }, { status: 404 })
+      return NextResponse.json({ error: 'Test group not found' }, { status: 404 })
     }
 
     // Get all campaigns in this test group
@@ -46,33 +46,14 @@ export async function POST(
       .eq('test_group_id', testId)
 
     if (!campaigns?.length) {
-      return NextResponse.json({ error: 'ไม่พบแคมเปญ' }, { status: 404 })
+      return NextResponse.json({ error: 'No campaigns found' }, { status: 404 })
     }
 
     const actions: { label: string; verdict: string; action: string; success: boolean }[] = []
 
-    // Debug: log matching info
-    const debugInfo = {
-      comparisonVariantIds: comparison.variants.map((v: any) => v.campaignId),
-      campaignIds: campaigns.map((c: any) => c.id),
-    }
-
     for (const cv of comparison.variants) {
-      // Try matching by campaignId first, then by label
-      let campaign = campaigns.find((c: any) => c.id === cv.campaignId)
-      if (!campaign && cv.label) {
-        campaign = campaigns.find((c: any) => c.variant_label === cv.label)
-      }
-
-      if (!campaign) {
-        actions.push({
-          label: cv.label || 'Unknown',
-          verdict: cv.verdict,
-          action: `ไม่พบแคมเปญที่ตรงกัน (ID: ${cv.campaignId?.slice(0, 8)}...)`,
-          success: false,
-        })
-        continue
-      }
+      const campaign = campaigns.find((c: any) => c.id === cv.campaignId)
+      if (!campaign) continue
 
       const budgetChange = typeof cv.suggestedBudgetChange === 'number'
         ? cv.suggestedBudgetChange
@@ -80,10 +61,8 @@ export async function POST(
 
       switch (cv.verdict) {
         case 'scale_up': {
-          // Default to +50% if no specific budget change
-          const effectiveChange = budgetChange > 0 ? budgetChange : 50
-          if (campaign.fb_adset_id) {
-            const multiplier = 1 + (effectiveChange / 100)
+          if (campaign.fb_adset_id && budgetChange > 0) {
+            const multiplier = 1 + (budgetChange / 100)
             const newBudget = Math.round(campaign.daily_budget * multiplier)
             try {
               await updateAdSetBudget(campaign.fb_adset_id, userToken, newBudget)
@@ -93,23 +72,22 @@ export async function POST(
               actions.push({
                 label: cv.label,
                 verdict: 'scale_up',
-                action: `เพิ่มงบ ฿${campaign.daily_budget} → ฿${newBudget}/วัน (+${effectiveChange}%)`,
+                action: `เพิ่มงบ ฿${campaign.daily_budget} → ฿${newBudget}/วัน (+${budgetChange}%)`,
                 success: true,
               })
             } catch (e: any) {
-              actions.push({ label: cv.label, verdict: 'scale_up', action: `Facebook Error: ${e.message}`, success: false })
+              actions.push({ label: cv.label, verdict: 'scale_up', action: e.message, success: false })
             }
           } else {
-            actions.push({ label: cv.label, verdict: 'scale_up', action: 'ไม่มี AdSet ID', success: false })
+            actions.push({ label: cv.label, verdict: 'scale_up', action: 'ไม่มีข้อมูลการเปลี่ยนงบ', success: false })
           }
           break
         }
 
         case 'reduce': {
-          // Default to -30% if no specific budget change
-          const effectiveChange = budgetChange !== 0 ? Math.abs(budgetChange) : 30
-          if (campaign.fb_adset_id) {
-            const multiplier = 1 - (effectiveChange / 100)
+          if (campaign.fb_adset_id && budgetChange !== 0) {
+            const changePercent = Math.abs(budgetChange)
+            const multiplier = 1 - (changePercent / 100)
             const newBudget = Math.max(20, Math.round(campaign.daily_budget * multiplier))
             try {
               await updateAdSetBudget(campaign.fb_adset_id, userToken, newBudget)
@@ -119,14 +97,12 @@ export async function POST(
               actions.push({
                 label: cv.label,
                 verdict: 'reduce',
-                action: `ลดงบ ฿${campaign.daily_budget} → ฿${newBudget}/วัน (-${effectiveChange}%)`,
+                action: `ลดงบ ฿${campaign.daily_budget} → ฿${newBudget}/วัน (-${changePercent}%)`,
                 success: true,
               })
             } catch (e: any) {
-              actions.push({ label: cv.label, verdict: 'reduce', action: `Facebook Error: ${e.message}`, success: false })
+              actions.push({ label: cv.label, verdict: 'reduce', action: e.message, success: false })
             }
-          } else {
-            actions.push({ label: cv.label, verdict: 'reduce', action: 'ไม่มี AdSet ID', success: false })
           }
           break
         }
@@ -138,21 +114,16 @@ export async function POST(
               await supabase.from('ad_campaigns').update({ status: 'paused' }).eq('id', campaign.id)
               actions.push({ label: cv.label, verdict: 'stop_and_delete', action: 'หยุดแอดแล้ว', success: true })
             } catch (e: any) {
-              actions.push({ label: cv.label, verdict: 'stop_and_delete', action: `Facebook Error: ${e.message}`, success: false })
+              actions.push({ label: cv.label, verdict: 'stop_and_delete', action: e.message, success: false })
             }
           } else {
-            actions.push({ label: cv.label, verdict: 'stop_and_delete', action: campaign.status === 'paused' ? 'หยุดอยู่แล้ว' : 'ไม่มี Campaign ID', success: true })
+            actions.push({ label: cv.label, verdict: 'stop_and_delete', action: 'หยุดอยู่แล้ว', success: true })
           }
           break
         }
 
         case 'keep_running': {
           actions.push({ label: cv.label, verdict: 'keep_running', action: 'ปล่อยต่อ ไม่เปลี่ยนแปลง', success: true })
-          break
-        }
-
-        default: {
-          actions.push({ label: cv.label || 'Unknown', verdict: cv.verdict || 'unknown', action: `ไม่รู้จัก verdict: ${cv.verdict}`, success: false })
           break
         }
       }
@@ -172,10 +143,10 @@ export async function POST(
       user_id: testGroup.user_id,
       type: 'ai_action',
       title: 'AI จัดสรรงบ A/B Test แล้ว',
-      message: actions.map(a => `${a.label}: ${a.action}`).join(', '),
+      message: `ดำเนินการ ${successCount}/${actions.length} รายการสำเร็จ`,
     })
 
-    return NextResponse.json({ success: true, actions, debug: debugInfo })
+    return NextResponse.json({ success: true, actions })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

@@ -28,7 +28,7 @@ export async function GET() {
     )
     const meData = await meRes.json()
     if (meData.error || !meData.id) {
-      return NextResponse.json({ campaigns: [], summary: null })
+      return NextResponse.json({ campaigns: [], summary: null, reason: 'fb_token_expired' })
     }
 
     const { data: user } = await supabase
@@ -171,7 +171,8 @@ export async function GET() {
         totalCampaigns: enriched.length,
       },
     })
-  } catch {
-    return NextResponse.json({ campaigns: [], summary: null })
+  } catch (err: any) {
+    console.error('[ads] fetch error:', err?.message)
+    return NextResponse.json({ campaigns: [], summary: null, reason: 'error' })
   }
 }
