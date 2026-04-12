@@ -230,55 +230,60 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `สร้างแอดไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 11. Create Ad (try inline creative first, fallback to separate) ──
-    let fbAdId: string
+    // ── 11. Create Ad (try multiple token/creative combos) ──
+    let fbAdId: string = ''
     try {
-      // Approach 1: inline creative with pageToken
-      const adRes1 = await fetch(`${FB}/${adAccountId}/ads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `${campaignName} - Ad`,
-          adset_id: fbAdSetId,
-          creative: { object_story_id: postId },
-          status: 'ACTIVE',
-          access_token: pageToken,
-        }),
-      })
-      const adData1 = await adRes1.json()
-      if (!adData1.error) {
-        fbAdId = adData1.id
-      } else {
-        // Approach 2: separate creative (pageToken) + ad (userToken)
+      let adError = ''
+      // Try inline creative with different tokens
+      for (const token of [userToken, pageToken]) {
+        const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `${campaignName} - Ad`,
+            adset_id: fbAdSetId,
+            creative: { object_story_id: postId },
+            status: 'ACTIVE',
+            access_token: token,
+          }),
+        })
+        const adData = await adRes.json()
+        if (!adData.error) { fbAdId = adData.id; break }
+        adError = adData.error.error_user_msg || adData.error.message
+      }
+
+      // Fallback: separate creative + ad with userToken
+      if (!fbAdId) {
         const creativeRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: `Creative - ${campaignName}`,
             object_story_id: postId,
-            access_token: pageToken,
-          }),
-        })
-        const creativeData = await creativeRes.json()
-        if (creativeData.error) {
-          return NextResponse.json({ error: `สร้าง Creative ไม่ได้: ${creativeData.error.error_user_msg || creativeData.error.message}` }, { status: 400 })
-        }
-
-        const adRes2 = await fetch(`${FB}/${adAccountId}/ads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${campaignName} - Ad`,
-            adset_id: fbAdSetId,
-            creative: { creative_id: creativeData.id },
-            status: 'ACTIVE',
             access_token: userToken,
           }),
         })
-        const adData2 = await adRes2.json()
-        if (adData2.error) return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adData2.error.error_user_msg || adData2.error.message}` }, { status: 400 })
-        fbAdId = adData2.id
+        const creativeData = await creativeRes.json()
+        if (!creativeData.error) {
+          const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${campaignName} - Ad`,
+              adset_id: fbAdSetId,
+              creative: { creative_id: creativeData.id },
+              status: 'ACTIVE',
+              access_token: userToken,
+            }),
+          })
+          const adData = await adRes.json()
+          if (!adData.error) fbAdId = adData.id
+          else adError = adData.error.error_user_msg || adData.error.message
+        } else {
+          adError = creativeData.error.error_user_msg || creativeData.error.message
+        }
       }
+      if (!fbAdId) return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adError}` }, { status: 400 })
     } catch (e: any) {
       return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${e.message}` }, { status: 500 })
     }
