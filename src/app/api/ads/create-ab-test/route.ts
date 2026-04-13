@@ -246,65 +246,76 @@ export async function POST(req: Request) {
         }
         if (!fbCampaignId || !fbAdSetId) throw new Error(lastError)
 
-        // ── Create Ad (try multiple token/creative combos) ──────
+        // ── Create Ad (try multiple creative strategies) ──────
+        // Ensure postId is in pageId_postSuffix format
+        const storyId = postId.includes('_') ? postId : `${pageId}_${postId}`
         let fbAdId: string = ''
         let adError: string = ''
 
-        // Build list of approaches to try
-        const adApproaches = [
-          // 1: userToken for everything (like Boost Post)
-          { token: userToken, label: 'userToken-inline' },
-          // 2: pageToken for everything
-          { token: pageToken, label: 'pageToken-inline' },
-        ]
-
-        for (const approach of adApproaches) {
+        // Strategy 1: source_story_id creative (designed for promoting existing posts)
+        const creative1Res = await fetch(`${FB}/${adAccountId}/adcreatives`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `Creative - ${variant.label}`,
+            source_story_id: storyId,
+            access_token: pageToken,
+          }),
+        })
+        const creative1Data = await creative1Res.json()
+        if (!creative1Data.error) {
           const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: `${variant.label} - Ad`,
               adset_id: fbAdSetId,
-              creative: { object_story_id: postId },
+              creative: { creative_id: creative1Data.id },
               status: 'ACTIVE',
-              access_token: approach.token,
-            }),
-          })
-          const adData = await adRes.json()
-          if (!adData.error) { fbAdId = adData.id; break }
-          adError = `${approach.label}: ${adData.error.error_user_msg || adData.error.message}`
-        }
-
-        // 3: Separate creative (userToken) + ad (userToken)
-        if (!fbAdId) {
-          const creativeRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: `Creative - ${variant.label}`,
-              object_story_id: postId,
               access_token: userToken,
             }),
           })
-          const creativeData = await creativeRes.json()
-          if (!creativeData.error) {
-            const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: `${variant.label} - Ad`,
-                adset_id: fbAdSetId,
-                creative: { creative_id: creativeData.id },
-                status: 'ACTIVE',
-                access_token: userToken,
-              }),
-            })
-            const adData = await adRes.json()
-            if (!adData.error) fbAdId = adData.id
-            else adError = adData.error.error_user_msg || adData.error.message
-          } else {
-            adError = creativeData.error.error_user_msg || creativeData.error.message
-          }
+          const adData = await adRes.json()
+          if (!adData.error) fbAdId = adData.id
+          else adError = `source_story+userToken: ${adData.error.error_user_msg || adData.error.message}`
+        } else {
+          adError = `source_story_creative: ${creative1Data.error.error_user_msg || creative1Data.error.message}`
+        }
+
+        // Strategy 2: inline object_story_id with userToken
+        if (!fbAdId) {
+          const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${variant.label} - Ad`,
+              adset_id: fbAdSetId,
+              creative: { object_story_id: storyId },
+              status: 'ACTIVE',
+              access_token: userToken,
+            }),
+          })
+          const adData = await adRes.json()
+          if (!adData.error) fbAdId = adData.id
+          else adError = `object_story+userToken: ${adData.error.error_user_msg || adData.error.message}`
+        }
+
+        // Strategy 3: inline object_story_id with pageToken
+        if (!fbAdId) {
+          const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${variant.label} - Ad`,
+              adset_id: fbAdSetId,
+              creative: { object_story_id: storyId },
+              status: 'ACTIVE',
+              access_token: pageToken,
+            }),
+          })
+          const adData = await adRes.json()
+          if (!adData.error) fbAdId = adData.id
+          else adError = `object_story+pageToken: ${adData.error.error_user_msg || adData.error.message}`
         }
 
         if (!fbAdId) throw new Error(`Ad: ${adError}`)
