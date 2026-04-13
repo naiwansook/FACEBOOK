@@ -8,14 +8,6 @@ export const dynamic = 'force-dynamic'
 
 const FB = 'https://graph.facebook.com/v19.0'
 
-// ── Full campaign configs to try in order (objective + adset must match) ───
-const CAMPAIGN_CONFIGS = [
-  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS', destination_type: 'ON_POST' },
-  { objective: 'OUTCOME_AWARENESS',  optimization_goal: 'REACH',            billing_event: 'IMPRESSIONS' },
-  { objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'ENGAGED_USERS',    billing_event: 'IMPRESSIONS' },
-  { objective: 'OUTCOME_TRAFFIC',    optimization_goal: 'LINK_CLICKS',      billing_event: 'IMPRESSIONS' },
-] as { objective: string; optimization_goal: string; billing_event: string; destination_type?: string }[]
-
 export async function POST(req: Request) {
   try {
     // ── 1. Auth ───────────────────────────────────────────────
@@ -182,139 +174,119 @@ export async function POST(req: Request) {
       }),
     ])
 
-    // ── 9+10. Create Campaign + Ad Set (try full configs until one works) ──
+    // ── 9+10. Create Campaign + Ad Set (OUTCOME_AWARENESS + REACH) ──
     let fbCampaignId: string = ''
     let fbAdSetId: string = ''
+    const storyId = postId.includes('_') ? postId : `${pageId}_${postId}`
     try {
       const dailyBudgetSatang = Math.round(Number(dailyBudget) * 100)
-      let lastError = ''
 
-      for (const cfg of CAMPAIGN_CONFIGS) {
-        const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: campaignName,
-            objective: cfg.objective,
-            status: 'ACTIVE',
-            buying_type: 'AUCTION',
-            special_ad_categories: [],
-            is_adset_budget_sharing_enabled: false,
-            access_token: userToken,
-          }),
-        })
-        const campData = await campRes.json()
-        if (campData.error) {
-          lastError = `Campaign(${cfg.objective}): ${campData.error.error_user_msg || campData.error.message}`
-          continue
-        }
+      const campRes = await fetch(`${FB}/${adAccountId}/campaigns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: campaignName,
+          objective: 'OUTCOME_AWARENESS',
+          status: 'ACTIVE',
+          buying_type: 'AUCTION',
+          special_ad_categories: [],
+          is_adset_budget_sharing_enabled: false,
+          access_token: userToken,
+        }),
+      })
+      const campData = await campRes.json()
+      if (campData.error) return NextResponse.json({ error: `Campaign: ${campData.error.error_user_msg || campData.error.message}` }, { status: 400 })
+      fbCampaignId = campData.id
 
-        const adsetBody: any = {
+      const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: `${campaignName} - Ad Set`,
-          campaign_id: campData.id,
+          campaign_id: fbCampaignId,
           daily_budget: dailyBudgetSatang,
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
           start_time: startDate || new Date().toISOString(),
           end_time: endDate,
-          billing_event: cfg.billing_event,
-          optimization_goal: cfg.optimization_goal,
+          billing_event: 'IMPRESSIONS',
+          optimization_goal: 'REACH',
           targeting,
           promoted_object: { page_id: pageId },
           access_token: userToken,
           status: 'ACTIVE',
-        }
-        if (cfg.destination_type) adsetBody.destination_type = cfg.destination_type
-
-        const adsetRes = await fetch(`${FB}/${adAccountId}/adsets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(adsetBody),
-        })
-        const adsetData = await adsetRes.json()
-        if (!adsetData.error) {
-          fbCampaignId = campData.id
-          fbAdSetId = adsetData.id
-          break
-        }
-        lastError = `AdSet(${cfg.optimization_goal}): ${adsetData.error.error_user_msg || adsetData.error.message}`
-        await fetch(`${FB}/${campData.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: userToken }) }).catch(() => {})
-      }
-      if (!fbCampaignId || !fbAdSetId) return NextResponse.json({ error: `สร้างแอดไม่ได้: ${lastError}` }, { status: 400 })
+        }),
+      })
+      const adsetData = await adsetRes.json()
+      if (adsetData.error) return NextResponse.json({ error: `AdSet: ${adsetData.error.error_user_msg || adsetData.error.message}` }, { status: 400 })
+      fbAdSetId = adsetData.id
     } catch (e: any) {
       return NextResponse.json({ error: `สร้างแอดไม่ได้: ${e.message}` }, { status: 500 })
     }
 
-    // ── 11. Create Ad (try multiple creative strategies) ──
-    // Ensure postId is in pageId_postSuffix format
-    const storyId = postId.includes('_') ? postId : `${pageId}_${postId}`
+    // ── 11. Create Ad Creative + Ad ──
     let fbAdId: string = ''
     try {
       let adError = ''
 
-      // Strategy 1: source_story_id creative (designed for promoting existing posts)
-      const creative1Res = await fetch(`${FB}/${adAccountId}/adcreatives`, {
+      // Strategy 1: object_story_spec (create new ad from post content — works with any objective)
+      const storySpec: any = { page_id: pageId }
+      if (postImage) {
+        storySpec.link_data = { message: postMessage || '', picture: postImage, link: `https://www.facebook.com/${storyId}`, name: (postMessage || '').slice(0, 60) || pageName || 'โพสต์' }
+      } else {
+        storySpec.link_data = { message: postMessage || '', link: `https://www.facebook.com/${storyId}` }
+      }
+
+      const specRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `Creative - ${campaignName}`,
-          source_story_id: storyId,
-          access_token: pageToken,
-        }),
+        body: JSON.stringify({ name: `Creative - ${campaignName}`, object_story_spec: storySpec, access_token: pageToken }),
       })
-      const creative1Data = await creative1Res.json()
-      if (!creative1Data.error) {
+      const specData = await specRes.json()
+      if (!specData.error) {
         const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${campaignName} - Ad`,
-            adset_id: fbAdSetId,
-            creative: { creative_id: creative1Data.id },
-            status: 'ACTIVE',
-            access_token: userToken,
-          }),
+          body: JSON.stringify({ name: `${campaignName} - Ad`, adset_id: fbAdSetId, creative: { creative_id: specData.id }, status: 'ACTIVE', access_token: userToken }),
         })
         const adData = await adRes.json()
         if (!adData.error) fbAdId = adData.id
         else adError = adData.error.error_user_msg || adData.error.message
       } else {
-        adError = creative1Data.error.error_user_msg || creative1Data.error.message
+        adError = specData.error.error_user_msg || specData.error.message
       }
 
-      // Strategy 2: inline object_story_id with userToken
+      // Strategy 2: source_story_id
       if (!fbAdId) {
-        const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+        const srcRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${campaignName} - Ad`,
-            adset_id: fbAdSetId,
-            creative: { object_story_id: storyId },
-            status: 'ACTIVE',
-            access_token: userToken,
-          }),
+          body: JSON.stringify({ name: `Creative - ${campaignName}`, source_story_id: storyId, access_token: pageToken }),
         })
-        const adData = await adRes.json()
-        if (!adData.error) fbAdId = adData.id
-        else adError = adData.error.error_user_msg || adData.error.message
+        const srcData = await srcRes.json()
+        if (!srcData.error) {
+          const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: `${campaignName} - Ad`, adset_id: fbAdSetId, creative: { creative_id: srcData.id }, status: 'ACTIVE', access_token: userToken }),
+          })
+          const adData = await adRes.json()
+          if (!adData.error) fbAdId = adData.id
+          else adError = adData.error.error_user_msg || adData.error.message
+        }
       }
 
-      // Strategy 3: inline object_story_id with pageToken
+      // Strategy 3: inline object_story_id
       if (!fbAdId) {
-        const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${campaignName} - Ad`,
-            adset_id: fbAdSetId,
-            creative: { object_story_id: storyId },
-            status: 'ACTIVE',
-            access_token: pageToken,
-          }),
-        })
-        const adData = await adRes.json()
-        if (!adData.error) fbAdId = adData.id
-        else adError = adData.error.error_user_msg || adData.error.message
+        for (const token of [userToken, pageToken]) {
+          const adRes = await fetch(`${FB}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: `${campaignName} - Ad`, adset_id: fbAdSetId, creative: { object_story_id: storyId }, status: 'ACTIVE', access_token: token }),
+          })
+          const adData = await adRes.json()
+          if (!adData.error) { fbAdId = adData.id; break }
+          adError = adData.error.error_user_msg || adData.error.message
+        }
       }
 
       if (!fbAdId) return NextResponse.json({ error: `สร้าง Ad ไม่ได้: ${adError}` }, { status: 400 })
