@@ -245,7 +245,25 @@ export async function POST(req: Request) {
           return false
         }
 
-        // Strategy 1: object_story_id as separate creative (promotes existing post)
+        // Strategy 1: photo_data spec (creates new ad from post image+text)
+        if (!fbAdId && postImage) {
+          for (const token of [pageToken, userToken]) {
+            const cRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: `Creative - ${variant.label}`,
+                object_story_spec: { page_id: pageId, photo_data: { url: postImage, caption: postMessage || '' } },
+                access_token: token,
+              }),
+            })
+            const cData = await cRes.json()
+            if (cData.error) { allAdErrors.push(`photo(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
+            if (await tryCreateAd(cData.id, `photo_${token === pageToken ? 'page' : 'user'}`)) break
+          }
+        }
+
+        // Strategy 2: object_story_id as separate creative (fallback)
         if (!fbAdId) {
           for (const token of [pageToken, userToken]) {
             const cRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
@@ -254,12 +272,12 @@ export async function POST(req: Request) {
               body: JSON.stringify({ name: `Creative - ${variant.label}`, object_story_id: storyId, access_token: token }),
             })
             const cData = await cRes.json()
-            if (cData.error) { allAdErrors.push(`obj_creative(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
-            if (await tryCreateAd(cData.id, `obj_story_${token === pageToken ? 'page' : 'user'}`)) break
+            if (cData.error) { allAdErrors.push(`obj(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
+            if (await tryCreateAd(cData.id, `obj_${token === pageToken ? 'page' : 'user'}`)) break
           }
         }
 
-        // Strategy 2: source_story_id creative
+        // Strategy 3: source_story_id (fallback)
         if (!fbAdId) {
           for (const token of [pageToken, userToken]) {
             const cRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
@@ -268,26 +286,8 @@ export async function POST(req: Request) {
               body: JSON.stringify({ name: `Creative - ${variant.label}`, source_story_id: storyId, access_token: token }),
             })
             const cData = await cRes.json()
-            if (cData.error) { allAdErrors.push(`src_creative(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
-            if (await tryCreateAd(cData.id, `src_story_${token === pageToken ? 'page' : 'user'}`)) break
-          }
-        }
-
-        // Strategy 3: photo_data spec (requires app in Live mode)
-        if (!fbAdId && postImage) {
-          for (const token of [pageToken, userToken]) {
-            const cRes = await fetch(`${FB}/${adAccountId}/adcreatives`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: `Creative - ${variant.label}`,
-                object_story_spec: { page_id: pageId, photo_data: { url: postImage, message: postMessage || '' } },
-                access_token: token,
-              }),
-            })
-            const cData = await cRes.json()
-            if (cData.error) { allAdErrors.push(`photo(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
-            if (await tryCreateAd(cData.id, `photo_${token === pageToken ? 'page' : 'user'}`)) break
+            if (cData.error) { allAdErrors.push(`src(${token === pageToken ? 'page' : 'user'}): ${cData.error.error_user_msg || cData.error.message}`); continue }
+            if (await tryCreateAd(cData.id, `src_${token === pageToken ? 'page' : 'user'}`)) break
           }
         }
 
