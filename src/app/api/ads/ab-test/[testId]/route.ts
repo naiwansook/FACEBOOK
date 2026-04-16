@@ -120,6 +120,7 @@ export async function GET(
         status: v.campaign.status,
         dailyBudget: v.campaign.daily_budget,
         fbCampaignId: v.campaign.fb_campaign_id,
+        goal: v.campaign.goal || 'reach',
         ...v.performance,
       })),
       latestAnalysis,
