@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles } from 'lucide-react'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles, Download } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -557,6 +557,8 @@ const fbStatusConfig: Record<string, { label: string; color: string; bg: string 
 function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, applying }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null; onApply: (id: string) => void; applying: string | null }) {
   const isActive = c.status === 'active'
   const isPaused = c.status === 'paused'
+  const isExpired = c.end_time ? new Date(c.end_time).getTime() <= Date.now() : false
+  const isCompleted = c.status === 'completed' || isExpired
   const campaignGoal = c.goal ? goalById(c.goal) : null
   const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
   const statusBg = isActive ? GREEN_L : isPaused ? YELLOW_L : '#f1f5f9'
@@ -642,6 +644,24 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, appl
           >
             <Power size={15} />
           </button>
+          {/* Export button (expired/completed) */}
+          {isCompleted && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`/api/ads/${c.id}/export`, '_blank') }}
+              title="ดาวน์โหลดรายงาน Excel"
+              style={{
+                width: 34, height: 34, borderRadius: 10, border: `1.5px solid rgba(37,99,235,0.25)`,
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'linear-gradient(135deg, #2563eb, #60a5fa)',
+                color: 'white',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.35)',
+                transition: 'all 0.18s',
+              }}
+            >
+              <Download size={14} />
+            </button>
+          )}
           {/* Delete button */}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(c.id, c.campaign_name) }}
