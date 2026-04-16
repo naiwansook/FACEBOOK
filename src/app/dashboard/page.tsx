@@ -287,10 +287,10 @@ export default function Dashboard() {
 
             {/* Row 2: Performance overview */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 14 }}>
-              <MiniCard icon={<Eye size={17} />} label="Impressions" value={fmt(summary.totalImpressions)} color="#7c3aed" bg="#f3e8ff" accent="#c084fc" small />
-              <MiniCard icon={<Users size={17} />} label="Reach" value={fmt(summary.totalReach)} color={CYAN} bg={CYAN_L} accent="#22d3ee" small />
-              <MiniCard icon={<MousePointer size={17} />} label="Clicks" value={fmt(summary.totalClicks)} color="#2563eb" bg="#dbeafe" accent="#60a5fa" small />
-              <MiniCard icon={<Percent size={17} />} label="CTR เฉลี่ย" value={`${fmt(summary.avgCTR, 2)}%`} color={summary.avgCTR >= 1.5 ? GREEN : summary.avgCTR >= 0.8 ? YELLOW : RED} bg={summary.avgCTR >= 1.5 ? GREEN_L : summary.avgCTR >= 0.8 ? YELLOW_L : RED_L} accent="#fcd34d" small />
+              <MiniCard icon={<Eye size={17} />} label="การแสดงผลรวม" value={fmt(summary.totalImpressions)} color="#7c3aed" bg="#f3e8ff" accent="#c084fc" small />
+              <MiniCard icon={<Users size={17} />} label="เข้าถึงรวม" value={fmt(summary.totalReach)} color={CYAN} bg={CYAN_L} accent="#22d3ee" small />
+              <MiniCard icon={<MousePointer size={17} />} label="คลิกรวม" value={fmt(summary.totalClicks)} color="#2563eb" bg="#dbeafe" accent="#60a5fa" small />
+              <MiniCard icon={<Percent size={17} />} label="อัตราคลิกเฉลี่ย" value={`${fmt(summary.avgCTR, 2)}%`} color={summary.avgCTR >= 1.5 ? GREEN : summary.avgCTR >= 0.8 ? YELLOW : RED} bg={summary.avgCTR >= 1.5 ? GREEN_L : summary.avgCTR >= 0.8 ? YELLOW_L : RED_L} accent="#fcd34d" small />
             </div>
 
             {/* Row 3: Campaign counts */}
@@ -742,21 +742,31 @@ function MetricPill({ label, value, icon, color }: { label: string; value: strin
 }
 
 // ─── Goal-specific Metrics ────────────────────────────────────
+const ALL_METRICS: Record<string, { label: string; icon: string; getValue: (p: any) => string; getColor?: (p: any) => string | undefined }> = {
+  impressions: { label: 'การแสดงผล', icon: '👁️', getValue: p => fmt(p.impressions) },
+  reach: { label: 'การเข้าถึง', icon: '👥', getValue: p => fmt(p.reach) },
+  clicks: { label: 'คลิก', icon: '🖱️', getValue: p => fmt(p.clicks) },
+  ctr: { label: 'อัตราคลิก', icon: '📊', getValue: p => `${fmt(p.ctr, 2)}%`, getColor: p => p.ctr >= 1.5 ? GREEN : p.ctr >= 0.8 ? YELLOW : RED },
+  cpc: { label: 'ต้นทุน/คลิก', icon: '💸', getValue: p => `฿${fmt(p.cpc, 2)}`, getColor: p => p.cpc > 0 && p.cpc <= 5 ? GREEN : p.cpc <= 15 ? YELLOW : RED },
+  cpm: { label: 'ต้นทุน/1000คน', icon: '💰', getValue: p => `฿${fmt(p.cpm, 2)}` },
+  spend: { label: 'ใช้จ่ายแล้ว', icon: '💵', getValue: p => `฿${fmt(p.spend, 2)}` },
+  engagement: { label: 'การมีส่วนร่วม', icon: '❤️', getValue: p => fmt(p.engagement || ((p.likes||0)+(p.comments||0)+(p.shares||0))) },
+  messages: { label: 'ข้อความที่ได้', icon: '💬', getValue: p => fmt(p.messages || 0) },
+  frequency: { label: 'ความถี่/คน', icon: '🔁', getValue: p => fmt(p.frequency, 2) },
+  likes: { label: 'ถูกใจ', icon: '👍', getValue: p => fmt(p.likes || 0) },
+  comments: { label: 'ความคิดเห็น', icon: '💭', getValue: p => fmt(p.comments || 0) },
+  shares: { label: 'แชร์', icon: '🔄', getValue: p => fmt(p.shares || 0) },
+  cost_per_msg: { label: 'ต้นทุน/ข้อความ', icon: '📩', getValue: p => { const m = p.messages || 0; return m > 0 ? `฿${fmt(p.spend / m, 2)}` : '-' }, getColor: p => { const m = p.messages || 0; if (!m) return undefined; const c = p.spend / m; return c <= 10 ? GREEN : c <= 30 ? YELLOW : RED } },
+  cost_per_engage: { label: 'ต้นทุน/ส่วนร่วม', icon: '📈', getValue: p => { const e = (p.engagement||0)||((p.likes||0)+(p.comments||0)+(p.shares||0)); return e > 0 ? `฿${fmt(p.spend / e, 2)}` : '-' } },
+}
+
 function GoalMetrics({ perf, goal }: { perf: any; goal: any }) {
   const metricKeys = goal?.metrics || ['impressions', 'reach', 'clicks', 'ctr', 'cpc']
-  const mm: Record<string, { label: string; icon: string; value: string; color?: string }> = {
-    impressions: { label: 'Impressions', icon: '👁️', value: fmt(perf.impressions) },
-    reach: { label: 'Reach', icon: '👥', value: fmt(perf.reach) },
-    clicks: { label: 'Clicks', icon: '🖱️', value: fmt(perf.clicks) },
-    ctr: { label: 'CTR', icon: '📊', value: `${fmt(perf.ctr, 2)}%`, color: perf.ctr >= 1.5 ? GREEN : perf.ctr >= 0.8 ? YELLOW : RED },
-    cpc: { label: 'CPC', icon: '💸', value: `฿${fmt(perf.cpc, 2)}`, color: perf.cpc > 0 && perf.cpc <= 5 ? GREEN : perf.cpc <= 15 ? YELLOW : RED },
-    cpm: { label: 'CPM', icon: '💰', value: `฿${fmt(perf.cpm, 2)}` },
-    spend: { label: 'Spend', icon: '💵', value: `฿${fmt(perf.spend, 2)}` },
-    engagement: { label: 'Engagement', icon: '❤️', value: fmt(perf.engagement || 0) },
-    messages: { label: 'Messages', icon: '💬', value: fmt(perf.messages || 0) },
-    frequency: { label: 'Frequency', icon: '🔁', value: fmt(perf.frequency, 2) },
-  }
-  const metrics = metricKeys.map((k: string) => mm[k]).filter(Boolean)
+  const metrics = metricKeys.map((k: string) => {
+    const m = ALL_METRICS[k]
+    if (!m) return null
+    return { label: m.label, icon: m.icon, value: m.getValue(perf), color: m.getColor?.(perf) }
+  }).filter(Boolean)
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(metrics.length, 5)}, 1fr)`, gap: 8 }}>
       {metrics.map((m: any) => <MetricPill key={m.label} label={m.label} value={m.value} icon={m.icon} color={m.color} />)}
@@ -766,13 +776,13 @@ function GoalMetrics({ perf, goal }: { perf: any; goal: any }) {
 
 // ─── Goal config ───────────────────────────────────────────────
 const GOALS = [
-  { id: 'auto_engagement', icon: '🤖', label: 'อัตโนมัติ', desc: 'เพิ่มการมีส่วนร่วมอัตโนมัติ', color: '#4338ca', bg: '#eef2ff', metrics: ['impressions', 'engagement', 'clicks', 'ctr'] },
-  { id: 'messages', icon: '💬', label: 'เพิ่มข้อความ', desc: 'ให้ลูกค้าทักมาใน Messenger', color: '#2563eb', bg: '#dbeafe', metrics: ['messages', 'clicks', 'cpc', 'ctr'] },
-  { id: 'sales_messages', icon: '🛒', label: 'ยอดขายผ่านแชท', desc: 'เพิ่มยอดการซื้อผ่านข้อความ', color: '#dc2626', bg: '#fef2f2', metrics: ['messages', 'clicks', 'spend', 'cpc'] },
-  { id: 'leads_messages', icon: '📋', label: 'ข้อมูลลูกค้า', desc: 'เก็บข้อมูลลูกค้าผ่าน Messenger', color: '#ea580c', bg: '#fff7ed', metrics: ['messages', 'clicks', 'cpc', 'ctr'] },
-  { id: 'traffic', icon: '🌐', label: 'ผู้เยี่ยมชมเว็บ', desc: 'เพิ่มคนคลิกเข้าเว็บไซต์', color: '#059669', bg: '#d1fae5', metrics: ['clicks', 'ctr', 'cpc', 'impressions'] },
-  { id: 'calls', icon: '📞', label: 'เพิ่มการโทร', desc: 'ให้คนโทรหาธุรกิจคุณ', color: '#0891b2', bg: '#ecfeff', metrics: ['clicks', 'reach', 'cpc', 'impressions'] },
-  { id: 'reach', icon: '📢', label: 'เข้าถึงมากสุด', desc: 'กระจายให้คนเห็นมากที่สุด', color: '#7c3aed', bg: '#f3e8ff', metrics: ['impressions', 'reach', 'cpm', 'frequency'] },
+  { id: 'auto_engagement', icon: '🤖', label: 'อัตโนมัติ', desc: 'เพิ่มการมีส่วนร่วมอัตโนมัติ', color: '#4338ca', bg: '#eef2ff', metrics: ['engagement', 'likes', 'comments', 'shares', 'spend', 'cost_per_engage'], abMetrics: ['engagement', 'likes', 'comments', 'shares', 'spend', 'cost_per_engage', 'reach', 'ctr'] },
+  { id: 'messages', icon: '💬', label: 'เพิ่มข้อความ', desc: 'ให้ลูกค้าทักมาใน Messenger', color: '#2563eb', bg: '#dbeafe', metrics: ['messages', 'cost_per_msg', 'clicks', 'reach', 'spend', 'ctr'], abMetrics: ['messages', 'cost_per_msg', 'clicks', 'reach', 'spend', 'ctr', 'impressions', 'cpc'] },
+  { id: 'sales_messages', icon: '🛒', label: 'ยอดขายผ่านแชท', desc: 'เพิ่มยอดการซื้อผ่านข้อความ', color: '#dc2626', bg: '#fef2f2', metrics: ['messages', 'cost_per_msg', 'spend', 'clicks', 'reach', 'cpc'], abMetrics: ['messages', 'cost_per_msg', 'spend', 'clicks', 'reach', 'cpc', 'impressions', 'ctr'] },
+  { id: 'leads_messages', icon: '📋', label: 'ข้อมูลลูกค้า', desc: 'เก็บข้อมูลลูกค้าผ่าน Messenger', color: '#ea580c', bg: '#fff7ed', metrics: ['messages', 'cost_per_msg', 'clicks', 'spend', 'ctr', 'cpc'], abMetrics: ['messages', 'cost_per_msg', 'clicks', 'spend', 'ctr', 'cpc', 'reach', 'impressions'] },
+  { id: 'traffic', icon: '🌐', label: 'ผู้เยี่ยมชมเว็บ', desc: 'เพิ่มคนคลิกเข้าเว็บไซต์', color: '#059669', bg: '#d1fae5', metrics: ['clicks', 'ctr', 'cpc', 'reach', 'spend', 'impressions'], abMetrics: ['clicks', 'ctr', 'cpc', 'reach', 'spend', 'impressions', 'cpm', 'frequency'] },
+  { id: 'calls', icon: '📞', label: 'เพิ่มการโทร', desc: 'ให้คนโทรหาธุรกิจคุณ', color: '#0891b2', bg: '#ecfeff', metrics: ['clicks', 'cpc', 'reach', 'spend', 'impressions', 'ctr'], abMetrics: ['clicks', 'cpc', 'reach', 'spend', 'impressions', 'ctr', 'cpm', 'frequency'] },
+  { id: 'reach', icon: '📢', label: 'เข้าถึงมากสุด', desc: 'กระจายให้คนเห็นมากที่สุด', color: '#7c3aed', bg: '#f3e8ff', metrics: ['reach', 'impressions', 'cpm', 'frequency', 'spend', 'engagement'], abMetrics: ['reach', 'impressions', 'cpm', 'frequency', 'spend', 'engagement', 'clicks', 'ctr'] },
 ]
 const goalById = (id: string) => GOALS.find(g => g.id === id) || GOALS[0]
 
@@ -1177,23 +1187,26 @@ function ABTestView({ testId, onClose }: { testId: string; onClose: () => void }
                       </div>
                     </div>
                     {v.strategy?.strategy && <p style={{ fontSize: 11, color: MUTED, margin: '0 0 10px', fontWeight: 500 }}>{v.strategy.strategy}</p>}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                      {[
-                        ['Impressions', fmt(v.impressions), false],
-                        ['Reach', fmt(v.reach), false],
-                        ['Clicks', fmt(v.clicks), false],
-                        ['Spend', `฿${fmt(v.spend, 1)}`, false],
-                        ['CTR', `${fmt(v.ctr, 2)}%`, bestCtr],
-                        ['CPC', `฿${fmt(v.cpc, 1)}`, bestCpc],
-                        ['CPM', `฿${fmt(v.cpm, 1)}`, false],
-                        ['Engagement', fmt(v.engagement), false],
-                      ].map(([label, value, highlight]) => (
-                        <div key={label as string} style={{ background: highlight ? GREEN_L : SURFACE2, borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: highlight ? GREEN : TEXT }}>{value}</div>
-                          <div style={{ fontSize: 9, color: MUTED, marginTop: 2, fontWeight: 600 }}>{label}</div>
+                    {(() => {
+                      const vGoal = goalById(v.goal || 'reach')
+                      const abKeys = vGoal.abMetrics || vGoal.metrics || ['impressions', 'reach', 'clicks', 'spend', 'ctr', 'cpc', 'cpm', 'engagement']
+                      const abItems = abKeys.map((k: string) => {
+                        const m = ALL_METRICS[k]
+                        if (!m) return null
+                        const isBest = k === 'ctr' ? bestCtr : k === 'cpc' ? bestCpc : false
+                        return { key: k, label: m.label, icon: m.icon, value: m.getValue(v), color: m.getColor?.(v), highlight: isBest }
+                      }).filter(Boolean)
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                          {abItems.map((m: any) => (
+                            <div key={m.key} style={{ background: m.highlight ? GREEN_L : SURFACE2, borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: m.highlight ? GREEN : m.color || TEXT }}>{m.value}</div>
+                              <div style={{ fontSize: 9, color: MUTED, marginTop: 2, fontWeight: 600 }}>{m.icon} {m.label}</div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      )
+                    })()}
                     {cv && (
                       <>
                         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
