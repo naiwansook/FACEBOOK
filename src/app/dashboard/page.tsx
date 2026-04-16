@@ -323,6 +323,8 @@ export default function Dashboard() {
                 const variants = t.variants || []
                 const activeCount = variants.filter((v: any) => v.status === 'active').length
                 const pausedCount = variants.filter((v: any) => v.status === 'paused').length
+                const anyExpired = variants.some((v: any) => v.endTime && new Date(v.endTime).getTime() <= Date.now())
+                const testDone = t.status === 'completed' || anyExpired
                 return (
                 <div key={t.id} onClick={() => setShowABView(t.id)}
                   style={{ width: '100%', background: SURFACE, border: `1.5px solid rgba(124,58,237,0.2)`, borderRadius: 20, padding: '18px 22px', cursor: 'pointer', color: TEXT, fontFamily: 'inherit', boxShadow: SHADOW_RAISED, transition: 'all 0.2s', overflow: 'hidden', boxSizing: 'border-box' }}
@@ -349,6 +351,21 @@ export default function Dashboard() {
                       <span style={{ fontSize: 10, fontWeight: 800, color: t.status === 'running' ? '#7c3aed' : MUTED, background: t.status === 'running' ? '#f3e8ff' : '#f1f5f9', padding: '3px 10px', borderRadius: 999 }}>
                         {t.status === 'running' ? 'กำลังทดสอบ' : t.status === 'completed' ? 'เสร็จ' : t.status}
                       </span>
+                      {testDone && (
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`/api/ads/ab-test/${t.id}/export`, '_blank') }}
+                          title="ดาวน์โหลดรายงาน Excel"
+                          style={{
+                            width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'linear-gradient(135deg, #2563eb, #60a5fa)',
+                            color: 'white', boxShadow: '0 3px 10px rgba(37,99,235,0.35)',
+                            transition: 'all 0.18s', flexShrink: 0,
+                          }}
+                        >
+                          <Download size={13} />
+                        </button>
+                      )}
                       <ChevronRight size={14} color={MUTED} />
                     </div>
                   </div>
