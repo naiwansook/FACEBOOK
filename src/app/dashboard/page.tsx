@@ -226,54 +226,143 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: TEXT, fontFamily: "'Sarabun', sans-serif", position: 'relative' }}>
+      {/* Responsive styles */}
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+        @media (max-width: 900px) {
+          .fb-sidebar { transform: translateX(-100%); transition: transform 0.25s; }
+          .fb-sidebar.open { transform: translateX(0); }
+          .fb-mobile-bar { display: flex !important; }
+          .fb-main { margin-left: 0 !important; padding: 14px 14px 32px !important; }
+        }
+      `}</style>
       {/* Grid BG */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(rgba(99,102,241,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.045) 1px, transparent 1px)`, backgroundSize: '48px 48px' }} />
       <div style={{ position: 'fixed', top: '-8%', right: '-4%', width: 480, height: 480, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 65%)', zIndex: 0, pointerEvents: 'none' }} />
 
-      {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(24px)', borderBottom: `1.5px solid ${BORDER}`, padding: '11px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 16px rgba(99,102,241,0.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <div style={{ width: 38, height: 38, background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, boxShadow: '0 4px 14px rgba(67,56,202,0.4)' }}>⚡</div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: TEXT }}>FB Ads AI</div>
-            {session?.user?.name && <div style={{ fontSize: 11, color: MUTED }}>{session.user.name}</div>}
+      {/* ── Sidebar (Left Menu) ── */}
+      <aside className="fb-sidebar" style={{
+        position: 'fixed', top: 0, left: 0, bottom: 0, width: 244,
+        background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(28px)',
+        borderRight: `1.5px solid ${BORDER}`, padding: '18px 14px 16px',
+        display: 'flex', flexDirection: 'column', gap: 6, zIndex: 50,
+        boxShadow: '4px 0 28px rgba(99,102,241,0.08)', overflowY: 'auto',
+      }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '2px 8px 16px', borderBottom: `1px solid ${BORDER}`, marginBottom: 10 }}>
+          <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: '0 4px 14px rgba(67,56,202,0.4)' }}>⚡</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 900, fontSize: 15, color: TEXT, lineHeight: 1.2 }}>FB Ads AI</div>
+            <div style={{ fontSize: 10, color: MUTED, fontWeight: 700, marginTop: 1 }}>Smart Manager</div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ position: 'relative' }} ref={notifRef}>
-            <button onClick={() => { setShowNotif(!showNotif); if (!showNotif && unreadCount > 0) markAllRead() }} style={{ ...btnGhost, padding: '8px 11px', position: 'relative' }}>
-              <Bell size={16} />
-              {unreadCount > 0 && <span style={{ position: 'absolute', top: 5, right: 5, width: 8, height: 8, background: RED, borderRadius: '50%', boxShadow: '0 0 6px rgba(220,38,38,0.6)' }} />}
-            </button>
-            {showNotif && (
-              <div style={{ position: 'absolute', right: 0, top: 50, width: 328, background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 18, zIndex: 100, boxShadow: SHADOW_LG, overflow: 'hidden' }}>
-                <div style={{ padding: '13px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 800, fontSize: 13 }}>🔔 การแจ้งเตือน</span>
-                  {unreadCount > 0 && <span style={{ fontSize: 11, color: PRIMARY, cursor: 'pointer', fontWeight: 700 }} onClick={markAllRead}>อ่านทั้งหมด</span>}
-                </div>
-                {notifications.length === 0 ? (
-                  <div style={{ padding: 28, textAlign: 'center', color: MUTED, fontSize: 13 }}>ยังไม่มีการแจ้งเตือน</div>
-                ) : notifications.slice(0, 8).map((n: any) => (
-                  <div key={n.id} style={{ padding: '11px 18px', borderBottom: `1px solid ${BORDER}`, background: n.is_read ? SURFACE : PRIMARY_LIGHT }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{n.title}</div>
-                    <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.55 }}>{n.message}</div>
-                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{fmtDate(n.created_at)}</div>
-                  </div>
-                ))}
+
+        {/* User info */}
+        {session?.user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', borderRadius: 12, marginBottom: 12, border: `1px solid ${BORDER}` }}>
+            {session.user.image ? (
+              <img src={session.user.image} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1.5px solid white' }} />
+            ) : (
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: PRIMARY, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 900, flexShrink: 0 }}>
+                {(session.user.name || 'U')[0]}
               </div>
             )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.user.name || 'ผู้ใช้'}</div>
+              <div style={{ fontSize: 9, color: GREEN, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: GREEN }} />เชื่อมต่อแล้ว
+              </div>
+            </div>
           </div>
-          <button onClick={handlePreviewCleanup} style={{ ...btnGhost, padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, color: RED, border: `1.5px solid rgba(220,38,38,0.2)` }}>
-            <Trash2 size={14} /> ล้างแอดเก่า
-          </button>
-          <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '9px 18px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Plus size={15} /> ยิงแอดใหม่
-          </button>
-          <button onClick={() => signOut({ callbackUrl: '/login' })} style={{ ...btnGhost, padding: '8px 11px' }}><LogOut size={15} /></button>
+        )}
+
+        {/* Primary CTA: Create Ad */}
+        <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '12px 14px', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginBottom: 10 }}>
+          <Plus size={16} /> ยิงแอดใหม่
+        </button>
+
+        {/* Section label */}
+        <div style={{ fontSize: 10, color: MUTED, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8, padding: '6px 10px 4px' }}>เมนูหลัก</div>
+
+        {/* Nav items */}
+        <NavItem icon={<BarChart3 size={15} />} label="แดชบอร์ด" active />
+        <div style={{ position: 'relative' }} ref={notifRef}>
+          <NavItem
+            icon={<Bell size={15} />}
+            label="การแจ้งเตือน"
+            badge={unreadCount > 0 ? unreadCount : undefined}
+            onClick={() => { setShowNotif(!showNotif); if (!showNotif && unreadCount > 0) markAllRead() }}
+          />
+          {showNotif && (
+            <div style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 328, background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 18, zIndex: 100, boxShadow: SHADOW_LG, overflow: 'hidden' }}>
+              <div style={{ padding: '13px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 800, fontSize: 13 }}>🔔 การแจ้งเตือน</span>
+                {unreadCount > 0 && <span style={{ fontSize: 11, color: PRIMARY, cursor: 'pointer', fontWeight: 700 }} onClick={markAllRead}>อ่านทั้งหมด</span>}
+              </div>
+              {notifications.length === 0 ? (
+                <div style={{ padding: 28, textAlign: 'center', color: MUTED, fontSize: 13 }}>ยังไม่มีการแจ้งเตือน</div>
+              ) : notifications.slice(0, 8).map((n: any) => (
+                <div key={n.id} style={{ padding: '11px 18px', borderBottom: `1px solid ${BORDER}`, background: n.is_read ? SURFACE : PRIMARY_LIGHT }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{n.title}</div>
+                  <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.55 }}>{n.message}</div>
+                  <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{fmtDate(n.created_at)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+        <NavItem icon={<Trash2 size={15} />} label="ล้างแอดเก่า" onClick={handlePreviewCleanup} danger />
+
+        {/* Pages section */}
+        {pages.length > 0 && (
+          <>
+            <div style={{ fontSize: 10, color: MUTED, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8, padding: '14px 10px 4px' }}>เพจของคุณ ({pages.length})</div>
+            <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+              {pages.map((p: any) => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: SURFACE2, borderRadius: 9, border: `1px solid ${BORDER}` }}>
+                  <span style={{ fontSize: 13 }}>📄</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Spacer */}
+        <div style={{ flex: 1, minHeight: 16 }} />
+
+        {/* Logout */}
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          style={{ ...btnGhost, padding: '10px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10, width: '100%', justifyContent: 'flex-start', color: RED, border: `1.5px solid rgba(220,38,38,0.18)`, fontWeight: 800 }}
+        >
+          <LogOut size={14} /> ออกจากระบบ
+        </button>
+      </aside>
+
+      {/* Mobile top bar (shown when sidebar hidden via CSS) */}
+      <div className="fb-mobile-bar" style={{ display: 'none', position: 'sticky', top: 0, zIndex: 45, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', borderBottom: `1.5px solid ${BORDER}`, padding: '10px 16px', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #4338ca, #818cf8)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>⚡</div>
+          <div style={{ fontWeight: 900, fontSize: 13 }}>FB Ads AI</div>
+        </div>
+        <button onClick={() => setShowModal(true)} style={{ ...btnPrimary, padding: '7px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Plus size={13} /> ยิงแอด
+        </button>
       </div>
 
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '26px 20px' }}>
+      <div className="fb-main" style={{ position: 'relative', zIndex: 1, marginLeft: 244, maxWidth: 1080, padding: '22px 24px 36px', boxSizing: 'border-box' }}>
+        {/* Page title */}
+        <div style={{ marginBottom: 22, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0, color: TEXT, letterSpacing: '-0.5px' }}>📊 แดชบอร์ด</h1>
+            <p style={{ fontSize: 12, color: MUTED, margin: '4px 0 0', fontWeight: 600 }}>ภาพรวมและจัดการแอด Facebook ของคุณ</p>
+          </div>
+          <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, background: SURFACE, padding: '6px 12px', borderRadius: 999, border: `1px solid ${BORDER}`, boxShadow: SHADOW_SM }}>
+            🕒 {new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' })}
+          </div>
+        </div>
+
 
         {/* ── Summary Cards ── */}
         {summary && (
@@ -300,16 +389,6 @@ export default function Dashboard() {
               <MiniCard icon={<Target size={17} />} label="หยุดชั่วคราว" value={String(summary.pausedCampaigns)} color={YELLOW} bg={YELLOW_L} accent="#fcd34d" small />
             </div>
           </>
-        )}
-
-        {/* Pages */}
-        {pages.length > 0 && (
-          <div style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: 14, padding: '11px 18px', marginBottom: 20, boxShadow: SHADOW_SM, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontSize: 12, color: MUTED, fontWeight: 700 }}>📄 Pages:</span>
-            {pages.map((p: any) => (
-              <span key={p.id} style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', color: PRIMARY, padding: '3px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid rgba(67,56,202,0.2)` }}>{p.name}</span>
-            ))}
-          </div>
         )}
 
         {/* ── AB Tests ── */}
@@ -535,6 +614,35 @@ export default function Dashboard() {
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Sidebar Nav Item ──────────────────────────────────────────
+function NavItem({ icon, label, active, onClick, badge, danger }: { icon: ReactNode; label: string; active?: boolean; onClick?: () => void; badge?: number; danger?: boolean }) {
+  const baseColor = danger ? RED : active ? PRIMARY : '#374151'
+  const baseBg = active ? 'linear-gradient(135deg, #eef2ff, #e0e7ff)' : 'transparent'
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 11,
+        padding: '10px 12px', border: 'none', borderRadius: 11,
+        background: baseBg, color: baseColor, cursor: onClick || active ? 'pointer' : 'default',
+        fontSize: 13, fontWeight: active ? 800 : 700, fontFamily: 'inherit',
+        width: '100%', textAlign: 'left' as const, transition: 'all 0.15s',
+        boxShadow: active ? '0 3px 10px rgba(67,56,202,0.12)' : 'none',
+        borderWidth: 1, borderStyle: 'solid', borderColor: active ? BORDER2 : 'transparent',
+        position: 'relative',
+      }}
+      onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#f5f7ff'; e.currentTarget.style.border = `1px solid ${BORDER}` } }}
+      onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.border = '1px solid transparent' } }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span style={{ background: RED, color: 'white', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 999, minWidth: 18, textAlign: 'center' as const }}>{badge > 99 ? '99+' : badge}</span>
+      )}
+    </button>
   )
 }
 
