@@ -240,6 +240,19 @@ export async function POST(req: Request) {
         return false
       }
 
+      // CTA button based on goal
+      const ctaMap: Record<string, string> = {
+        messages: 'MESSAGE_PAGE',
+        sales_messages: 'MESSAGE_PAGE',
+        leads_messages: 'MESSAGE_PAGE',
+        traffic: 'LEARN_MORE',
+        calls: 'CALL_NOW',
+        reach: 'LEARN_MORE',
+        auto_engagement: 'LIKE_PAGE',
+      }
+      const ctaType = ctaMap[goal] || 'LEARN_MORE'
+      const callToAction = { type: ctaType, value: ctaType === 'CALL_NOW' ? {} : { page: pageId } }
+
       // Strategy 1: photo_data spec (creates new ad from post image+text — best for OUTCOME_AWARENESS)
       if (postImage) {
         for (const token of [pageToken, userToken]) {
@@ -248,7 +261,7 @@ export async function POST(req: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: `Creative - ${campaignName}`,
-              object_story_spec: { page_id: pageId, photo_data: { url: postImage, caption: postMessage || '' } },
+              object_story_spec: { page_id: pageId, photo_data: { url: postImage, caption: postMessage || '', call_to_action: callToAction } },
               access_token: token,
             }),
           })

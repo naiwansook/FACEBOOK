@@ -1000,6 +1000,56 @@ function CreateAdModal({ pages, onClose, onSuccess }: { pages: any[]; onClose: (
                 </div>
               )})()}
 
+              {/* Ad Preview */}
+              {selectedPost && (() => {
+                const ctaLabels: Record<string, string> = {
+                  messages: 'ส่งข้อความ',
+                  sales_messages: 'ส่งข้อความ',
+                  leads_messages: 'ส่งข้อความ',
+                  traffic: 'เรียนรู้เพิ่มเติม',
+                  calls: 'โทรเลย',
+                  reach: 'ถูกใจ',
+                  auto_engagement: 'ถูกใจ',
+                }
+                const ctaLabel = ctaLabels[selectedGoal || ''] || 'เรียนรู้เพิ่มเติม'
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <p style={{ fontSize: 11, color: MUTED, fontWeight: 700, margin: '0 0 8px', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>👁️ ตัวอย่างโฆษณาที่ลูกค้าจะเห็น</p>
+                    <div style={{ background: '#fff', border: `1.5px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden', boxShadow: SHADOW_SM }}>
+                      {/* Page header */}
+                      <div style={{ padding: '10px 13px', display: 'flex', alignItems: 'center', gap: 9 }}>
+                        {selectedPage?.picture ? (
+                          <img src={selectedPage.picture} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                        ) : (
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: PRIMARY, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 16, fontWeight: 900, flexShrink: 0 }}>
+                            {(selectedPage?.name || 'P')[0]}
+                          </div>
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#050505' }}>{selectedPage?.name || 'เพจของคุณ'}</div>
+                          <div style={{ fontSize: 10, color: MUTED, fontWeight: 500 }}>ได้รับการสนับสนุน · 🌐</div>
+                        </div>
+                      </div>
+                      {/* Post caption */}
+                      {selectedPost.message && (
+                        <div style={{ padding: '0 13px 10px', fontSize: 13, color: '#050505', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const }}>
+                          {selectedPost.message}
+                        </div>
+                      )}
+                      {/* Post image */}
+                      {selectedPost.full_picture && (
+                        <img src={selectedPost.full_picture} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
+                      )}
+                      {/* CTA row */}
+                      <div style={{ padding: '9px 13px', borderTop: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f2f3f5' }}>
+                        <div style={{ fontSize: 10, color: MUTED, fontWeight: 500 }}>fb-ads-manager.vercel.app</div>
+                        <div style={{ background: '#e4e6eb', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, color: '#050505' }}>{ctaLabel}</div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* AI info */}
               <div style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1.5px solid rgba(5,150,105,0.25)', borderRadius: 13, padding: '13px 16px', marginBottom: 16 }}>
                 <span style={{ fontSize: 12, fontWeight: 800, color: GREEN }}>🤖 AI จะวิเคราะห์โพสต์แล้วสร้าง 3-4 แบบ</span>
