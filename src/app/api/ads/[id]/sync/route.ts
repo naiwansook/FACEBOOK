@@ -1,7 +1,20 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { getCampaignInsights, getRealStatus, updateAllStatus } from '@/lib/facebook'
+import { getCampaignInsights, getRealStatus, updateAllStatus, parseInsightActions } from '@/lib/facebook'
+
+function mapFbToDb(fb: string): string {
+  switch (fb) {
+    case 'ACTIVE': return 'active'
+    case 'PAUSED': return 'paused'
+    case 'DISAPPROVED': return 'disapproved'
+    case 'PENDING_REVIEW': return 'pending_review'
+    case 'WITH_ISSUES': return 'with_issues'
+    case 'ARCHIVED': return 'archived'
+    case 'DELETED': return 'deleted'
+    default: return 'active'
+  }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -53,13 +66,19 @@ export async function POST(
     try {
       fbStatus = await getRealStatus(userToken, campaign.fb_campaign_id, campaign.fb_adset_id, campaign.fb_ad_id)
 
-      // Sync DB status with Facebook reality
-      if (fbStatus.overall === 'ACTIVE' && campaign.status !== 'active') {
-        await supabase.from('ad_campaigns').update({ status: 'active' }).eq('id', params.id)
-      } else if (['PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(fbStatus.overall) && campaign.status !== 'paused') {
-        await supabase.from('ad_campaigns').update({ status: 'paused' }).eq('id', params.id)
+      const isExpired = campaign.end_time && new Date(campaign.end_time).getTime() <= Date.now()
+      const targetStatus = isExpired ? 'completed' : mapFbToDb(fbStatus.overall)
+
+      if (targetStatus !== campaign.status || fbStatus.overall !== campaign.fb_effective_status) {
+        await supabase.from('ad_campaigns').update({
+          status: targetStatus,
+          fb_effective_status: fbStatus.overall,
+          fb_status_synced_at: new Date().toISOString(),
+        }).eq('id', params.id)
       }
-    } catch {}
+    } catch (e: any) {
+      console.error(`[sync] status fetch failed for ${params.id}:`, e?.message)
+    }
 
     // 2. Try to fetch insights using USER TOKEN (Marketing API needs user token)
     let insights = null
@@ -75,16 +94,9 @@ export async function POST(
       })
     }
 
-    // Parse engagement actions
-    const actions = insights.actions || []
-    const getAction = (type: string) =>
-      parseInt(actions.find((a: any) => a.action_type === type)?.value || '0')
-
-    const likes = getAction('like') + getAction('post_reaction')
-    const comments = getAction('comment')
-    const shares = getAction('share')
-    const postEngagement = getAction('post_engagement')
-
+    // Parse engagement actions using shared helper
+    const parsed = parseInsightActions(insights)
+    const { likes, comments, shares, messages, linkClicks, calls, postEngagement, pageEngagement } = parsed
     const spend = parseFloat(insights.spend || '0')
     const startTime = campaign.start_time ? new Date(campaign.start_time) : new Date()
     const endTime = campaign.end_time ? new Date(campaign.end_time) : new Date()
@@ -111,6 +123,10 @@ export async function POST(
         reactions: likes,
         unique_clicks: parseInt(insights.unique_clicks || '0'),
         post_engagement: postEngagement,
+        page_engagement: pageEngagement,
+        messages,
+        link_clicks: linkClicks,
+        calls,
         budget_remaining: budgetRemaining,
       })
       .select()

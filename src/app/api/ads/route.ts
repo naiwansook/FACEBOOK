@@ -77,26 +77,55 @@ export async function GET() {
       if (!analysisMap[a.campaign_id]) analysisMap[a.campaign_id] = a
     }
 
-    // Fetch real Facebook status only for non-AB-test standalone campaigns (reduce API calls)
+    // Fetch real Facebook status for ALL campaigns (including AB variants) — user needs accuracy
+    // To reduce API calls: only sync if last sync is older than 5 minutes
     const fbStatusMap: Record<string, any> = {}
-    const standaloneCampaigns = campaigns.filter(c => !c.test_group_id && c.fb_campaign_id)
-    const statusPromises = standaloneCampaigns.map(async (c) => {
+    const syncableCampaigns = campaigns.filter(c => c.fb_campaign_id && c.status !== 'completed' && c.status !== 'archived' && c.status !== 'deleted')
+
+    const mapFbToDb = (fb: string): string => {
+      switch (fb) {
+        case 'ACTIVE': return 'active'
+        case 'PAUSED': return 'paused'
+        case 'DISAPPROVED': return 'disapproved'
+        case 'PENDING_REVIEW': return 'pending_review'
+        case 'WITH_ISSUES': return 'with_issues'
+        case 'ARCHIVED': return 'archived'
+        case 'DELETED': return 'deleted'
+        default: return 'active'
+      }
+    }
+
+    const statusPromises = syncableCampaigns.map(async (c: any) => {
+      // Cache: skip FB call if synced within last 3 minutes
+      const syncedAt = c.fb_status_synced_at ? new Date(c.fb_status_synced_at).getTime() : 0
+      const fresh = Date.now() - syncedAt < 3 * 60 * 1000
+      if (fresh && c.fb_effective_status) {
+        fbStatusMap[c.id] = { overall: c.fb_effective_status, cached: true }
+        return
+      }
       try {
         const status = await getRealStatus(userToken, c.fb_campaign_id, c.fb_adset_id, c.fb_ad_id)
         fbStatusMap[c.id] = status
 
-        // Auto-sync DB status if different from Facebook
-        const fbOverall = status.overall
-        const dbStatus = c.status
-        let newDbStatus: string | null = null
-        if (fbOverall === 'ACTIVE' && dbStatus !== 'active') newDbStatus = 'active'
-        else if ((fbOverall === 'PAUSED' || fbOverall === 'CAMPAIGN_PAUSED' || fbOverall === 'ADSET_PAUSED') && dbStatus !== 'paused') newDbStatus = 'paused'
+        const newDbStatus = mapFbToDb(status.overall)
+        // Also auto-mark expired campaigns as completed
+        const isExpired = c.end_time && new Date(c.end_time).getTime() <= Date.now()
+        const targetStatus = isExpired ? 'completed' : newDbStatus
 
-        if (newDbStatus) {
-          await supabase.from('ad_campaigns').update({ status: newDbStatus }).eq('id', c.id)
-          c.status = newDbStatus // update in-memory too
+        if (targetStatus !== c.status || status.overall !== c.fb_effective_status) {
+          await supabase.from('ad_campaigns')
+            .update({
+              status: targetStatus,
+              fb_effective_status: status.overall,
+              fb_status_synced_at: new Date().toISOString(),
+            })
+            .eq('id', c.id)
+          c.status = targetStatus
+          c.fb_effective_status = status.overall
         }
-      } catch {}
+      } catch (e: any) {
+        console.error(`[ads] FB status sync failed for ${c.id}:`, e?.message)
+      }
     })
     await Promise.all(statusPromises)
 
@@ -127,6 +156,9 @@ export async function GET() {
           comments: perf.comments || 0,
           shares: perf.shares || 0,
           post_engagement: perf.post_engagement || 0,
+          messages: perf.messages || 0,
+          link_clicks: perf.link_clicks || 0,
+          calls: perf.calls || 0,
           fetched_at: perf.fetched_at,
         } : null,
         analysis: analysis ? {
@@ -155,6 +187,7 @@ export async function GET() {
     const totalReach = enriched.reduce((s, c) => s + (c.perf?.reach || 0), 0)
     const activeCampaigns = enriched.filter(c => c.status === 'active').length
     const pausedCampaigns = enriched.filter(c => c.status === 'paused').length
+    const issuesCampaigns = enriched.filter(c => ['disapproved', 'with_issues', 'pending_review'].includes(c.status)).length
 
     return NextResponse.json({
       campaigns: enriched,
@@ -168,6 +201,7 @@ export async function GET() {
         avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0,
         activeCampaigns,
         pausedCampaigns,
+        issuesCampaigns,
         totalCampaigns: enriched.length,
       },
     })
