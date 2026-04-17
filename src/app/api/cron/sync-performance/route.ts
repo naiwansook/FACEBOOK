@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server'
-import { getCampaignInsights, updateCampaignStatus } from '@/lib/facebook'
+import { getCampaignInsights, updateCampaignStatus, getRealStatus, parseInsightActions } from '@/lib/facebook'
 import { analyzeAdPerformance, compareTestVariants, type VariantPerformance } from '@/lib/ai-analyzer'
+
+// Map FB effective_status → DB status enum
+function mapFbToDbStatus(fbOverall: string): string {
+  switch (fbOverall) {
+    case 'ACTIVE': return 'active'
+    case 'PAUSED': return 'paused'
+    case 'DISAPPROVED': return 'disapproved'
+    case 'PENDING_REVIEW': return 'pending_review'
+    case 'WITH_ISSUES': return 'with_issues'
+    case 'ARCHIVED': return 'archived'
+    case 'DELETED': return 'deleted'
+    default: return 'active' // unknown — keep running
+  }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -17,22 +31,22 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Get all active campaigns with their page tokens
+  // Get all non-ended campaigns (active, paused, pending_review, with_issues) + auto-mark expired
   const { data: campaigns, error } = await supabase
     .from('ad_campaigns')
     .select(`
-      id, fb_campaign_id, fb_adset_id, campaign_name,
+      id, fb_campaign_id, fb_adset_id, fb_ad_id, campaign_name, status,
       daily_budget, start_time, end_time, user_id,
       connected_pages!page_id (page_access_token, ad_account_id)
     `)
-    .eq('status', 'active')
+    .in('status', ['active', 'paused', 'pending_review', 'with_issues'])
     .not('fb_campaign_id', 'is', null)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const results = { synced: 0, analyzed: 0, abTestsCompared: 0, errors: 0 }
+  const results = { synced: 0, analyzed: 0, abTestsCompared: 0, statusUpdated: 0, errors: 0, errorDetails: [] as string[] }
 
   for (const campaign of campaigns || []) {
     try {
@@ -40,19 +54,40 @@ export async function GET(req: Request) {
       const pageToken = page?.page_access_token
       if (!pageToken || !campaign.fb_campaign_id) continue
 
-      // Fetch Facebook Insights
+      // 1. Sync real FB status first
+      try {
+        const fbStatus = await getRealStatus(pageToken, campaign.fb_campaign_id, campaign.fb_adset_id, campaign.fb_ad_id)
+        const newDbStatus = mapFbToDbStatus(fbStatus.overall)
+        // Auto-mark completed if end_time passed
+        const isExpired = campaign.end_time && new Date(campaign.end_time).getTime() <= Date.now()
+        const targetStatus = isExpired ? 'completed' : newDbStatus
+        if (targetStatus !== campaign.status) {
+          await supabase.from('ad_campaigns')
+            .update({
+              status: targetStatus,
+              fb_effective_status: fbStatus.overall,
+              fb_status_synced_at: new Date().toISOString(),
+            })
+            .eq('id', campaign.id)
+          campaign.status = targetStatus
+          results.statusUpdated++
+        } else {
+          // Still update the metadata for freshness
+          await supabase.from('ad_campaigns')
+            .update({ fb_effective_status: fbStatus.overall, fb_status_synced_at: new Date().toISOString() })
+            .eq('id', campaign.id)
+        }
+      } catch (e: any) {
+        console.error(`[cron] status sync failed for ${campaign.id}:`, e.message)
+      }
+
+      // 2. Fetch Facebook Insights
       const insights = await getCampaignInsights(campaign.fb_campaign_id, pageToken)
       if (!insights) continue
 
-      // Parse engagement actions
-      const actions = insights.actions || []
-      const getAction = (type: string) =>
-        parseInt(actions.find((a: any) => a.action_type === type)?.value || '0')
-
-      const likes = getAction('like') + getAction('post_reaction')
-      const comments = getAction('comment')
-      const shares = getAction('share')
-      const postEngagement = getAction('post_engagement')
+      // Parse actions using shared helper (ensures consistency with Ads Manager)
+      const parsed = parseInsightActions(insights)
+      const { likes, comments, shares, messages, linkClicks, calls, postEngagement, pageEngagement } = parsed
 
       const spend = parseFloat(insights.spend || '0')
       const budgetPerDay = campaign.daily_budget || 0
@@ -78,6 +113,10 @@ export async function GET(req: Request) {
         reactions: likes,
         unique_clicks: parseInt(insights.unique_clicks || '0'),
         post_engagement: postEngagement,
+        page_engagement: pageEngagement,
+        messages,
+        link_clicks: linkClicks,
+        calls,
         budget_remaining: budgetRemaining,
       })
 
@@ -144,8 +183,9 @@ export async function GET(req: Request) {
         results.analyzed++
       }
     } catch (err: any) {
-      console.error(`Error syncing campaign ${campaign.id}:`, err.message)
+      console.error(`[cron] Error syncing campaign ${campaign.id}:`, err.message)
       results.errors++
+      results.errorDetails.push(`${campaign.campaign_name || campaign.id}: ${err.message}`)
     }
   }
 
@@ -192,15 +232,30 @@ export async function GET(req: Request) {
 
       if (!shouldCompare) continue
 
-      // Collect live metrics
+      // Collect live metrics + sync each variant's real FB status
       const variantPerfs: VariantPerformance[] = []
       for (const camp of testCampaigns) {
-        if (!camp.fb_campaign_id || camp.status !== 'active') continue
+        if (!camp.fb_campaign_id) continue
+
+        // Sync status for each variant (AB test often has mixed states)
+        try {
+          const fs = await getRealStatus(page.page_access_token, camp.fb_campaign_id, camp.fb_adset_id, camp.fb_ad_id)
+          const target = mapFbToDbStatus(fs.overall)
+          if (target !== camp.status) {
+            await supabase.from('ad_campaigns')
+              .update({ status: target, fb_effective_status: fs.overall, fb_status_synced_at: new Date().toISOString() })
+              .eq('id', camp.id)
+            camp.status = target
+            results.statusUpdated++
+          }
+        } catch {}
+
+        if (camp.status !== 'active') continue
+
         try {
           const ins = await getCampaignInsights(camp.fb_campaign_id, page.page_access_token)
           if (!ins) continue
-          const actions = ins.actions || []
-          const ga = (t: string) => parseInt(actions.find((a: any) => a.action_type === t)?.value || '0')
+          const parsed = parseInsightActions(ins)
 
           variantPerfs.push({
             campaignId: camp.id,
@@ -214,13 +269,13 @@ export async function GET(req: Request) {
             cpm: parseFloat(ins.cpm || '0'),
             cpc: parseFloat(ins.cpc || '0'),
             frequency: parseFloat(ins.frequency || '0'),
-            engagement: ga('post_engagement'),
-            likes: ga('like') + ga('post_reaction'),
-            comments: ga('comment'),
-            shares: ga('share'),
+            engagement: parsed.postEngagement,
+            likes: parsed.likes,
+            comments: parsed.comments,
+            shares: parsed.shares,
           })
-        } catch {
-          // skip
+        } catch (e: any) {
+          console.error(`[cron] AB variant insights failed for ${camp.id}:`, e.message)
         }
       }
 

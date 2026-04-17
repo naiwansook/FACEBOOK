@@ -1,7 +1,20 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { getCampaignInsights } from '@/lib/facebook'
+import { getCampaignInsights, getRealStatus, parseInsightActions } from '@/lib/facebook'
+
+function mapFbToDb(fb: string): string {
+  switch (fb) {
+    case 'ACTIVE': return 'active'
+    case 'PAUSED': return 'paused'
+    case 'DISAPPROVED': return 'disapproved'
+    case 'PENDING_REVIEW': return 'pending_review'
+    case 'WITH_ISSUES': return 'with_issues'
+    case 'ARCHIVED': return 'archived'
+    case 'DELETED': return 'deleted'
+    default: return 'active'
+  }
+}
 import { compareTestVariants, type VariantPerformance } from '@/lib/ai-analyzer'
 
 export const dynamic = 'force-dynamic'
@@ -46,9 +59,8 @@ export async function GET(
 
     const pageToken = (testGroup as any).connected_pages?.page_access_token
 
-    // Fetch latest performance for each variant
-    const variantsWithPerformance = []
-    for (const campaign of campaigns || []) {
+    // Fetch real FB status + insights for each variant in parallel (max accuracy vs Ads Manager)
+    const variantsWithPerformance = await Promise.all((campaigns || []).map(async (campaign) => {
       // Get latest stored performance
       const { data: latestPerf } = await supabase
         .from('ad_performance')
@@ -58,39 +70,70 @@ export async function GET(
         .limit(1)
         .single()
 
-      // Try to get fresh data from Facebook if we have a token
-      let liveInsights = null
+      let liveInsights: any = null
+      let fbStatus: any = null
+      let effectiveStatus = campaign.fb_effective_status || null
+
       if (pageToken && campaign.fb_campaign_id) {
-        try {
-          liveInsights = await getCampaignInsights(campaign.fb_campaign_id, pageToken)
-        } catch {
-          // use cached data
+        // Parallel: status + insights
+        const [statusResult, insightsResult] = await Promise.all([
+          getRealStatus(pageToken, campaign.fb_campaign_id, campaign.fb_adset_id, campaign.fb_ad_id).catch((e) => {
+            console.error(`[ab-test] status failed for ${campaign.id}:`, e?.message)
+            return null
+          }),
+          getCampaignInsights(campaign.fb_campaign_id, pageToken).catch((e) => {
+            console.error(`[ab-test] insights failed for ${campaign.id}:`, e?.message)
+            return null
+          }),
+        ])
+        fbStatus = statusResult
+        liveInsights = insightsResult
+
+        // Auto-sync DB status from FB
+        if (statusResult) {
+          effectiveStatus = statusResult.overall
+          const isExpired = campaign.end_time && new Date(campaign.end_time).getTime() <= Date.now()
+          const target = isExpired ? 'completed' : mapFbToDb(statusResult.overall)
+          if (target !== campaign.status || statusResult.overall !== campaign.fb_effective_status) {
+            await supabase.from('ad_campaigns')
+              .update({
+                status: target,
+                fb_effective_status: statusResult.overall,
+                fb_status_synced_at: new Date().toISOString(),
+              })
+              .eq('id', campaign.id)
+            campaign.status = target
+            campaign.fb_effective_status = statusResult.overall
+          }
         }
       }
 
+      const parsed = liveInsights ? parseInsightActions(liveInsights) : null
       const perf = liveInsights || latestPerf
-      const actions = liveInsights?.actions || []
-      const getAction = (type: string) =>
-        parseInt(actions.find((a: any) => a.action_type === type)?.value || '0')
 
-      variantsWithPerformance.push({
+      return {
         campaign,
+        effectiveStatus,
+        fbStatus,
         performance: {
-          impressions: perf ? parseInt(perf.impressions || '0') : 0,
-          reach: perf ? parseInt(perf.reach || '0') : 0,
-          clicks: perf ? parseInt(perf.clicks || '0') : 0,
-          spend: perf ? parseFloat(perf.spend || '0') : 0,
-          cpm: perf ? parseFloat(perf.cpm || '0') : 0,
-          cpc: perf ? parseFloat(perf.cpc || '0') : 0,
-          ctr: perf ? parseFloat(perf.ctr || '0') : 0,
-          frequency: perf ? parseFloat(perf.frequency || '0') : 0,
-          engagement: liveInsights ? getAction('post_engagement') : (latestPerf?.post_engagement || 0),
-          likes: liveInsights ? (getAction('like') + getAction('post_reaction')) : (latestPerf?.likes || 0),
-          comments: liveInsights ? getAction('comment') : (latestPerf?.comments || 0),
-          shares: liveInsights ? getAction('share') : (latestPerf?.shares || 0),
+          impressions: perf ? parseInt(String(perf.impressions || '0')) : 0,
+          reach: perf ? parseInt(String(perf.reach || '0')) : 0,
+          clicks: perf ? parseInt(String(perf.clicks || '0')) : 0,
+          spend: perf ? parseFloat(String(perf.spend || '0')) : 0,
+          cpm: perf ? parseFloat(String(perf.cpm || '0')) : 0,
+          cpc: perf ? parseFloat(String(perf.cpc || '0')) : 0,
+          ctr: perf ? parseFloat(String(perf.ctr || '0')) : 0,
+          frequency: perf ? parseFloat(String(perf.frequency || '0')) : 0,
+          engagement: parsed ? parsed.postEngagement : (latestPerf?.post_engagement || 0),
+          likes: parsed ? parsed.likes : (latestPerf?.likes || 0),
+          comments: parsed ? parsed.comments : (latestPerf?.comments || 0),
+          shares: parsed ? parsed.shares : (latestPerf?.shares || 0),
+          messages: parsed ? parsed.messages : (latestPerf?.messages || 0),
+          link_clicks: parsed ? parsed.linkClicks : (latestPerf?.link_clicks || 0),
+          calls: parsed ? parsed.calls : (latestPerf?.calls || 0),
         },
-      })
-    }
+      }
+    }))
 
     // Get latest AI comparison (if exists)
     const { data: latestAnalysis } = await supabase
@@ -118,8 +161,12 @@ export async function GET(
         label: v.campaign.variant_label,
         strategy: v.campaign.variant_strategy,
         status: v.campaign.status,
+        effectiveStatus: v.effectiveStatus, // Real FB effective_status (ACTIVE/PAUSED/DISAPPROVED/...)
+        fbStatus: v.fbStatus ? { campaign: v.fbStatus.campaign, adset: v.fbStatus.adset, ad: v.fbStatus.ad, overall: v.fbStatus.overall } : null,
         dailyBudget: v.campaign.daily_budget,
         fbCampaignId: v.campaign.fb_campaign_id,
+        startTime: v.campaign.start_time,
+        endTime: v.campaign.end_time,
         goal: v.campaign.goal || 'reach',
         ...v.performance,
       })),
@@ -178,29 +225,28 @@ export async function POST(
 
       try {
         const insights = await getCampaignInsights(campaign.fb_campaign_id, pageToken)
-        const actions = insights?.actions || []
-        const getAction = (type: string) =>
-          parseInt(actions.find((a: any) => a.action_type === type)?.value || '0')
+        const parsed = insights ? parseInsightActions(insights) : null
+        if (!insights || !parsed) continue
 
         variantPerformances.push({
           campaignId: campaign.id,
           variantLabel: campaign.variant_label || campaign.campaign_name,
           strategy: campaign.variant_strategy?.strategy || '',
-          spend: parseFloat(insights?.spend || '0'),
-          impressions: parseInt(insights?.impressions || '0'),
-          reach: parseInt(insights?.reach || '0'),
-          clicks: parseInt(insights?.clicks || '0'),
-          ctr: parseFloat(insights?.ctr || '0'),
-          cpm: parseFloat(insights?.cpm || '0'),
-          cpc: parseFloat(insights?.cpc || '0'),
-          frequency: parseFloat(insights?.frequency || '0'),
-          engagement: getAction('post_engagement'),
-          likes: getAction('like') + getAction('post_reaction'),
-          comments: getAction('comment'),
-          shares: getAction('share'),
+          spend: parseFloat(insights.spend || '0'),
+          impressions: parseInt(insights.impressions || '0'),
+          reach: parseInt(insights.reach || '0'),
+          clicks: parseInt(insights.clicks || '0'),
+          ctr: parseFloat(insights.ctr || '0'),
+          cpm: parseFloat(insights.cpm || '0'),
+          cpc: parseFloat(insights.cpc || '0'),
+          frequency: parseFloat(insights.frequency || '0'),
+          engagement: parsed.postEngagement,
+          likes: parsed.likes,
+          comments: parsed.comments,
+          shares: parsed.shares,
         })
-      } catch {
-        // Skip if can't fetch
+      } catch (e: any) {
+        console.error(`[ab-test POST] insights failed for ${campaign.id}:`, e.message)
       }
     }
 

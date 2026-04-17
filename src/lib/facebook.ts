@@ -231,7 +231,9 @@ export async function getCampaignInsights(
   const fields = [
     'impressions', 'reach', 'clicks', 'spend',
     'cpm', 'cpc', 'ctr', 'frequency',
-    'actions', 'unique_clicks', 'date_start', 'date_stop'
+    'actions', 'action_values', 'unique_clicks',
+    'inline_link_clicks', 'inline_post_engagement',
+    'date_start', 'date_stop'
   ].join(',')
 
   const res = await fetch(
@@ -240,6 +242,31 @@ export async function getCampaignInsights(
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
   return data.data?.[0] as FBInsights | null
+}
+
+/** แปลง insights raw → metrics สรุป (likes/comments/shares/messages ฯลฯ) ที่ตรงกับ Ads Manager */
+export function parseInsightActions(insights: FBInsights | null | undefined) {
+  const actions = insights?.actions || []
+  const getAction = (type: string) => {
+    const a = actions.find(x => x.action_type === type)
+    return a ? Number(a.value) || 0 : 0
+  }
+  // Facebook action types — ตรงกับ FB Ads Manager
+  const likes = getAction('like') + getAction('post_reaction')
+  const comments = getAction('comment')
+  const shares = getAction('post') // shares on post
+  const postEngagement = getAction('post_engagement')
+  const pageEngagement = getAction('page_engagement')
+  // Messaging conversations (Messenger-destination ads)
+  const messages = getAction('onsite_conversion.messaging_conversation_started_7d')
+    || getAction('onsite_conversion.messaging_first_reply')
+    || getAction('messaging_conversation_started_7d')
+  // Link clicks (traffic ads)
+  const linkClicks = Number(insights?.inline_link_clicks || 0) || getAction('link_click')
+  // Phone calls
+  const calls = getAction('click_to_call_call_confirm') || getAction('onsite_conversion.flow_complete')
+
+  return { likes, comments, shares, postEngagement, pageEngagement, messages, linkClicks, calls }
 }
 
 /** หยุด / เปิด Campaign */
@@ -314,7 +341,7 @@ export async function updateAllStatus(
   return results
 }
 
-/** ดึงสถานะจริงจาก Facebook ทั้ง 3 ระดับ */
+/** ดึงสถานะจริงจาก Facebook ทั้ง 3 ระดับ + error details */
 export async function getRealStatus(
   accessToken: string,
   fbCampaignId: string,
@@ -326,46 +353,67 @@ export async function getRealStatus(
     adset?: { status: string; effective_status: string }
     ad?: { status: string; effective_status: string }
     overall: string
-  } = { overall: 'UNKNOWN' }
+    errors: string[]
+    fetchedAt: string
+  } = { overall: 'UNKNOWN', errors: [], fetchedAt: new Date().toISOString() }
 
-  // Campaign status
-  try {
-    const r = await fetch(`${FB_API}/${fbCampaignId}?fields=status,effective_status&access_token=${accessToken}`)
-    const d = await r.json()
-    if (!d.error) result.campaign = { status: d.status, effective_status: d.effective_status }
-  } catch {}
-
-  // AdSet status
-  if (fbAdSetId) {
+  const fetchStatus = async (id: string, level: string): Promise<{ status: string; effective_status: string } | null> => {
     try {
-      const r = await fetch(`${FB_API}/${fbAdSetId}?fields=status,effective_status&access_token=${accessToken}`)
+      const r = await fetch(`${FB_API}/${id}?fields=status,effective_status&access_token=${accessToken}`)
       const d = await r.json()
-      if (!d.error) result.adset = { status: d.status, effective_status: d.effective_status }
-    } catch {}
+      if (d.error) {
+        result.errors.push(`${level} (${id}): ${d.error.message}`)
+        // Error code 100 (object not found) or 190 (token expired) means the object may have been deleted
+        if (d.error.code === 100 || d.error.message?.includes('does not exist')) {
+          return { status: 'DELETED', effective_status: 'DELETED' }
+        }
+        return null
+      }
+      return { status: d.status, effective_status: d.effective_status }
+    } catch (e: any) {
+      result.errors.push(`${level} (${id}): ${e.message}`)
+      return null
+    }
   }
 
-  // Ad status
-  if (fbAdId) {
-    try {
-      const r = await fetch(`${FB_API}/${fbAdId}?fields=status,effective_status&access_token=${accessToken}`)
-      const d = await r.json()
-      if (!d.error) result.ad = { status: d.status, effective_status: d.effective_status }
-    } catch {}
-  }
+  // Fetch all three in parallel for speed
+  const [campaignData, adsetData, adData] = await Promise.all([
+    fetchStatus(fbCampaignId, 'Campaign'),
+    fbAdSetId ? fetchStatus(fbAdSetId, 'AdSet') : Promise.resolve(null),
+    fbAdId ? fetchStatus(fbAdId, 'Ad') : Promise.resolve(null),
+  ])
 
-  // Determine overall: all must be ACTIVE for ad to run
+  if (campaignData) result.campaign = campaignData
+  if (adsetData) result.adset = adsetData
+  if (adData) result.ad = adData
+
+  // Determine overall status — comprehensive mapping to FB Ads Manager statuses
   const statuses = [
     result.campaign?.effective_status,
     result.adset?.effective_status,
     result.ad?.effective_status,
-  ].filter(Boolean)
+  ].filter(Boolean) as string[]
 
-  if (statuses.length === 0) result.overall = 'UNKNOWN'
-  else if (statuses.every(s => s === 'ACTIVE')) result.overall = 'ACTIVE'
-  else if (statuses.some(s => s === 'PAUSED' || s === 'CAMPAIGN_PAUSED' || s === 'ADSET_PAUSED')) result.overall = 'PAUSED'
-  else if (statuses.some(s => s === 'PENDING_REVIEW' || s === 'IN_PROCESS')) result.overall = 'PENDING_REVIEW'
-  else if (statuses.some(s => s === 'DISAPPROVED')) result.overall = 'DISAPPROVED'
-  else result.overall = statuses[statuses.length - 1] || 'UNKNOWN'
+  if (statuses.length === 0) {
+    result.overall = 'UNKNOWN'
+  } else if (statuses.some(s => s === 'DELETED')) {
+    result.overall = 'DELETED'
+  } else if (statuses.some(s => s === 'ARCHIVED')) {
+    result.overall = 'ARCHIVED'
+  } else if (statuses.some(s => s === 'DISAPPROVED')) {
+    result.overall = 'DISAPPROVED'
+  } else if (statuses.some(s => s === 'WITH_ISSUES' || s === 'ADSET_DISAPPROVED' || s === 'CAMPAIGN_DISAPPROVED')) {
+    result.overall = 'WITH_ISSUES'
+  } else if (statuses.some(s => s === 'PENDING_REVIEW' || s === 'IN_PROCESS' || s === 'PENDING_BILLING_INFO')) {
+    result.overall = 'PENDING_REVIEW'
+  } else if (statuses.some(s => s === 'PAUSED' || s === 'CAMPAIGN_PAUSED' || s === 'ADSET_PAUSED')) {
+    result.overall = 'PAUSED'
+  } else if (statuses.every(s => s === 'ACTIVE')) {
+    result.overall = 'ACTIVE'
+  } else {
+    // Fallback: show the worst (non-active) status
+    result.overall = statuses.find(s => s !== 'ACTIVE') || 'UNKNOWN'
+  }
 
   return result
 }
@@ -457,7 +505,10 @@ export interface FBInsights {
   ctr: string
   frequency: string
   actions?: { action_type: string; value: string }[]
+  action_values?: { action_type: string; value: string }[]
   unique_clicks: string
+  inline_link_clicks?: string
+  inline_post_engagement?: string
   date_start: string
   date_stop: string
 }

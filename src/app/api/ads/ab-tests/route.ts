@@ -47,7 +47,7 @@ export async function GET() {
     const testIds = (tests || []).map(t => t.id)
     const { data: allVariants } = await supabase
       .from('ad_campaigns')
-      .select('id, test_group_id, variant_label, daily_budget, status, fb_campaign_id, fb_adset_id, fb_ad_id, start_time, end_time')
+      .select('id, test_group_id, variant_label, daily_budget, status, fb_campaign_id, fb_adset_id, fb_ad_id, fb_effective_status, fb_status_synced_at, start_time, end_time')
       .in('test_group_id', testIds)
 
     // Get latest performance per variant
@@ -75,6 +75,8 @@ export async function GET() {
         label: v.variant_label,
         dailyBudget: v.daily_budget,
         status: v.status,
+        effectiveStatus: v.fb_effective_status,
+        syncedAt: v.fb_status_synced_at,
         startTime: v.start_time,
         endTime: v.end_time,
         spend: perf?.spend || 0,

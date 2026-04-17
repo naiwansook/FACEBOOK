@@ -452,10 +452,13 @@ export default function Dashboard() {
                   {variants.length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(variants.length, 4)}, minmax(0, 1fr))`, gap: 8 }}>
                       {variants.map((v: any) => {
-                        const isActive = v.status === 'active'
-                        const isPaused = v.status === 'paused'
-                        const statusLabel = isActive ? 'กำลังวิ่ง' : isPaused ? 'หยุด' : v.status
-                        const statusClr = isActive ? GREEN : isPaused ? YELLOW : MUTED
+                        const vExpired = v.endTime ? new Date(v.endTime).getTime() <= Date.now() : false
+                        // Trust FB effective status first, fallback to DB status
+                        const vEff = vExpired ? 'COMPLETED' : (v.effectiveStatus || (v.status === 'active' ? 'ACTIVE' : v.status === 'paused' ? 'PAUSED' : 'UNKNOWN'))
+                        const vConf = fbStatusConfig[vEff] || fbStatusConfig.UNKNOWN
+                        const isActive = vEff === 'ACTIVE'
+                        const isPaused = vEff === 'PAUSED' || vEff === 'CAMPAIGN_PAUSED' || vEff === 'ADSET_PAUSED'
+                        const hasIssues = vEff === 'DISAPPROVED' || vEff === 'WITH_ISSUES'
                         const start = v.startTime ? new Date(v.startTime) : new Date()
                         const end = v.endTime ? new Date(v.endTime) : new Date()
                         const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
@@ -464,15 +467,15 @@ export default function Dashboard() {
                         const barColor = spendPct > 80 ? RED : spendPct > 50 ? YELLOW : GREEN
                         return (
                           <div key={v.id} style={{
-                            background: isActive ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : isPaused ? '#fffbeb' : SURFACE2,
-                            border: `1px solid ${isActive ? 'rgba(5,150,105,0.2)' : isPaused ? 'rgba(217,119,6,0.2)' : BORDER}`,
+                            background: isActive ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : hasIssues ? 'linear-gradient(135deg, #fef2f2, #fee2e2)' : isPaused ? '#fffbeb' : SURFACE2,
+                            border: `1px solid ${isActive ? 'rgba(5,150,105,0.2)' : hasIssues ? 'rgba(220,38,38,0.25)' : isPaused ? 'rgba(217,119,6,0.2)' : BORDER}`,
                             borderRadius: 12, padding: '10px 12px', overflow: 'hidden', minWidth: 0,
                           }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                              <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? GREEN : isPaused ? YELLOW : TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: isActive ? GREEN : hasIssues ? RED : isPaused ? YELLOW : TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                 {v.label || 'Variant'}
                               </div>
-                              <span style={{ fontSize: 9, fontWeight: 700, color: statusClr, background: statusClr + '15', padding: '1px 6px', borderRadius: 999, flexShrink: 0 }}>{statusLabel}</span>
+                              <span title={v.syncedAt ? `อัปเดตจาก FB เมื่อ ${fmtDateTime(v.syncedAt)}` : 'ยังไม่ sync'} style={{ fontSize: 9, fontWeight: 700, color: vConf.color, background: vConf.bg, padding: '1px 7px', borderRadius: 999, flexShrink: 0, border: `1px solid ${vConf.color}35` }}>{vConf.icon} {vConf.label}</span>
                             </div>
                             <div style={{ fontSize: 16, fontWeight: 900, color: TEXT, marginBottom: 6 }}>฿{v.dailyBudget}<span style={{ fontSize: 10, fontWeight: 600, color: MUTED }}>/วัน</span></div>
                             {/* Budget progress bar */}
@@ -665,37 +668,46 @@ function MiniCard({ icon, label, value, color, bg, accent, small }: { icon: Reac
   )
 }
 
-// ─── FB Status helpers ────────────────────────────────────────
-const fbStatusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  ACTIVE:         { label: 'FB: ACTIVE',         color: GREEN,    bg: GREEN_L },
-  PAUSED:         { label: 'FB: PAUSED',         color: YELLOW,   bg: YELLOW_L },
-  CAMPAIGN_PAUSED:{ label: 'FB: Campaign หยุด',  color: YELLOW,   bg: YELLOW_L },
-  ADSET_PAUSED:   { label: 'FB: AdSet หยุด',     color: YELLOW,   bg: YELLOW_L },
-  PENDING_REVIEW: { label: 'FB: รอตรวจสอบ',      color: '#2563eb', bg: '#dbeafe' },
-  IN_PROCESS:     { label: 'FB: กำลังประมวลผล',   color: CYAN,     bg: CYAN_L },
-  DISAPPROVED:    { label: 'FB: ไม่ผ่าน',         color: RED,      bg: RED_L },
-  DELETED:        { label: 'FB: ถูกลบ',           color: MUTED,    bg: '#f1f5f9' },
-  UNKNOWN:        { label: 'FB: ไม่ทราบ',         color: MUTED,    bg: '#f1f5f9' },
+// ─── FB Status helpers (ต้องตรงกับ Ads Manager) ────────────────
+const fbStatusConfig: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  ACTIVE:          { label: 'กำลังทำงาน',     color: GREEN,     bg: GREEN_L,     icon: '●' },
+  PAUSED:          { label: 'หยุดชั่วคราว',    color: YELLOW,    bg: YELLOW_L,    icon: '⏸' },
+  CAMPAIGN_PAUSED: { label: 'Campaign ถูกหยุด', color: YELLOW,   bg: YELLOW_L,    icon: '⏸' },
+  ADSET_PAUSED:    { label: 'AdSet ถูกหยุด',   color: YELLOW,    bg: YELLOW_L,    icon: '⏸' },
+  PENDING_REVIEW:  { label: 'รอตรวจสอบ',      color: '#2563eb', bg: '#dbeafe',   icon: '⏳' },
+  IN_PROCESS:      { label: 'กำลังประมวลผล',   color: CYAN,      bg: CYAN_L,      icon: '⚙️' },
+  DISAPPROVED:     { label: 'ถูกปฏิเสธ',       color: RED,       bg: RED_L,       icon: '❌' },
+  WITH_ISSUES:     { label: 'มีปัญหา',         color: '#ea580c', bg: '#ffedd5',   icon: '⚠️' },
+  ARCHIVED:        { label: 'จัดเก็บถาวร',     color: MUTED,     bg: '#f1f5f9',   icon: '📦' },
+  DELETED:         { label: 'ถูกลบ',           color: MUTED,     bg: '#f1f5f9',   icon: '🗑️' },
+  COMPLETED:       { label: 'เสร็จสิ้น',       color: MUTED,     bg: '#f1f5f9',   icon: '✓' },
+  UNKNOWN:         { label: 'ไม่ทราบ',         color: MUTED,     bg: '#f1f5f9',   icon: '?' },
 }
 
 // ─── Campaign Card (with metrics + FB status + toggle) ────────
 function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, applying }: { campaign: any; onToggle: (id: string, action: 'pause' | 'resume') => void; onDelete: (id: string, name: string) => void; deleting: string | null; onApply: (id: string) => void; applying: string | null }) {
-  const isActive = c.status === 'active'
-  const isPaused = c.status === 'paused'
   const isExpired = c.end_time ? new Date(c.end_time).getTime() <= Date.now() : false
   const isCompleted = c.status === 'completed' || isExpired
   const campaignGoal = c.goal ? goalById(c.goal) : null
-  const statusColor = isActive ? GREEN : isPaused ? YELLOW : MUTED
-  const statusBg = isActive ? GREEN_L : isPaused ? YELLOW_L : '#f1f5f9'
-  const statusLabel = isActive ? '● กำลังวิ่ง' : isPaused ? '⏸ หยุด' : c.status
+
+  // Real Facebook status (trust FB over DB) — MUST match Ads Manager
+  const fbOverall = c.fbStatus?.overall || c.fb_effective_status || null
+  // If FB says anything non-ACTIVE, trust that. Use DB as fallback only if FB data missing.
+  const effectiveStatus = isCompleted ? 'COMPLETED' : (fbOverall || (c.status === 'active' ? 'ACTIVE' : c.status === 'paused' ? 'PAUSED' : 'UNKNOWN'))
+  const fbConf = fbStatusConfig[effectiveStatus] || fbStatusConfig.UNKNOWN
+  const statusColor = fbConf.color
+  const statusBg = fbConf.bg
+  const statusLabel = `${fbConf.icon} ${fbConf.label}`
+
+  // Derived flags for action buttons
+  const isActive = effectiveStatus === 'ACTIVE'
+  const isPaused = effectiveStatus === 'PAUSED' || effectiveStatus === 'CAMPAIGN_PAUSED' || effectiveStatus === 'ADSET_PAUSED'
+  const hasIssues = effectiveStatus === 'DISAPPROVED' || effectiveStatus === 'WITH_ISSUES'
+
   const perf = c.perf
   const analysis = c.analysis
   const rec = analysis ? recConfig[analysis.recommendation] : null
   const spendPercent = c.totalBudget > 0 ? Math.min(100, (perf?.spend || 0) / c.totalBudget * 100) : 0
-
-  // Real Facebook status
-  const fbOverall = c.fbStatus?.overall || null
-  const fbConf = fbOverall ? (fbStatusConfig[fbOverall] || fbStatusConfig.UNKNOWN) : null
 
   return (
     <div style={{
@@ -740,16 +752,10 @@ function CampaignCard({ campaign: c, onToggle, onDelete, deleting, onApply, appl
               {rec.icon} {rec.label}
             </span>
           )}
-          {/* DB status badge */}
-          <span style={{ fontSize: 11, fontWeight: 800, color: statusColor, background: statusBg, padding: '4px 13px', borderRadius: 999, border: `1px solid ${statusColor}35` }}>
+          {/* Status badge (synced with Facebook Ads Manager) */}
+          <span title={c.fb_status_synced_at ? `อัปเดตจาก FB เมื่อ ${fmtDateTime(c.fb_status_synced_at)}` : 'ยังไม่ได้ sync'} style={{ fontSize: 11, fontWeight: 800, color: statusColor, background: statusBg, padding: '4px 13px', borderRadius: 999, border: `1px solid ${statusColor}35` }}>
             {statusLabel}
           </span>
-          {/* Real Facebook status badge */}
-          {fbConf && (
-            <span style={{ fontSize: 10, fontWeight: 800, color: fbConf.color, background: fbConf.bg, padding: '3px 10px', borderRadius: 999, border: `1px solid ${fbConf.color}30` }}>
-              {fbConf.label}
-            </span>
-          )}
           {/* Toggle button */}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(c.id, isActive ? 'pause' : 'resume') }}
