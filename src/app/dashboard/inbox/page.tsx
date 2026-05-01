@@ -394,10 +394,11 @@ export default function InboxPage() {
               </select>
             )}
 
-            {/* Status filter — compact tabs (text + icon mix to fit narrow column) */}
+            {/* Status filter — compact pill tabs (clearly separated from list) */}
             <div style={{
-              display: 'flex', gap: 0, borderBottom: `1px solid ${BORDER}`,
-              justifyContent: 'space-between',
+              display: 'flex', gap: 3, padding: 3,
+              background: SURFACE2, borderRadius: 10,
+              border: `1px solid ${BORDER}`,
             }}>
               {([
                 ['all', 'ทั้งหมด', null, null],
@@ -413,16 +414,18 @@ export default function InboxPage() {
                     onClick={() => setStatusFilter(key as any)}
                     title={key === 'starred' ? 'ติดดาว' : key === 'archived' ? 'จัดเก็บ' : undefined}
                     style={{
-                      flex: 1, padding: '8px 4px', border: 'none', background: 'transparent',
+                      flex: 1, padding: '6px 4px', border: 'none',
+                      borderRadius: 7,
+                      background: active ? 'white' : 'transparent',
+                      boxShadow: active ? '0 1px 3px rgba(67,56,202,0.15)' : 'none',
                       fontSize: 11, fontWeight: active ? 800 : 700, cursor: 'pointer',
                       fontFamily: 'inherit', color: active ? PRIMARY : MUTED,
-                      borderBottom: active ? `2px solid ${PRIMARY}` : '2px solid transparent',
                       whiteSpace: 'nowrap',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                      transition: 'color 0.15s, border-color 0.15s',
+                      transition: 'all 0.15s',
                     }}
                   >
-                    {Icon ? <Icon size={14} /> : label}
+                    {Icon ? <Icon size={13} /> : label}
                     {count !== null && count !== undefined && (
                       <span style={{
                         background: RED, color: 'white',
