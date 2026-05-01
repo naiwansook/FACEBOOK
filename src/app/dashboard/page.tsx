@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles, Download } from 'lucide-react'
+import Link from 'next/link'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles, Download, MessageSquare } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -81,6 +82,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null)
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [inboxUnread, setInboxUnread] = useState(0)
   const [showNotif, setShowNotif] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showABView, setShowABView] = useState<string | null>(null)
@@ -100,11 +102,12 @@ export default function Dashboard() {
 
   async function loadAll() {
     setLoading(true)
-    const [pagesRes, campaignsRes, notifsRes, abTestsRes] = await Promise.all([
+    const [pagesRes, campaignsRes, notifsRes, abTestsRes, inboxRes] = await Promise.all([
       fetch('/api/pages').then(r => r.json()),
       fetch('/api/ads').then(r => r.json()),
       fetch('/api/notifications').then(r => r.json()),
       fetch('/api/ads/ab-tests').then(r => r.json()).catch(() => ({ tests: [] })),
+      fetch('/api/inbox/conversations?filter=unread&limit=1').then(r => r.json()).catch(() => ({ totalUnread: 0 })),
     ])
     setPages(pagesRes.pages || [])
     setCampaigns(campaignsRes.campaigns || [])
@@ -113,6 +116,7 @@ export default function Dashboard() {
     setNotifications(notifsRes.notifications || [])
     setUnreadCount(notifsRes.unreadCount || 0)
     setAbTests(abTestsRes.tests || [])
+    setInboxUnread(inboxRes.totalUnread || 0)
     setLoading(false)
   }
 
@@ -286,6 +290,9 @@ export default function Dashboard() {
 
         {/* Nav items */}
         <NavItem icon={<BarChart3 size={15} />} label="แดชบอร์ด" active />
+        <Link href="/dashboard/inbox" style={{ textDecoration: 'none' }}>
+          <NavItem icon={<MessageSquare size={15} />} label="กล่องข้อความ" badge={inboxUnread > 0 ? inboxUnread : undefined} />
+        </Link>
         <div style={{ position: 'relative' }} ref={notifRef}>
           <NavItem
             icon={<Bell size={15} />}
