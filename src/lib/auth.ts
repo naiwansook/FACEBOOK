@@ -42,8 +42,11 @@ export const authOptions = {
       authorization: {
         params: {
           scope: 'business_management,ads_management,ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_metadata,pages_manage_posts,pages_messaging',
-          auth_type: 'rerequest',
-          redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/facebook`,
+          // ตั้งใจไม่ใส่ auth_type='rerequest' และ redirect_uri ตรงๆ:
+          // - rerequest บังคับ FB ขอ permissions ใหม่ทุกครั้ง อาจ trigger
+          //   error เมื่อ user เคยให้สิทธิ์แล้ว
+          // - redirect_uri ปล่อยให้ NextAuth auto-detect จาก request
+          //   (เพิ่มเข้าไปจะ error=OAuthCallback ถ้า NEXTAUTH_URL ไม่ตรง 100%)
         },
       },
     }),
@@ -87,5 +90,25 @@ export const authOptions = {
   },
   pages: {
     signIn: '/login',
+  },
+  // ─── Debug & error visibility ────────────────────────────────
+  // เพิ่ม events handler เพื่อ log error ตัวจริงใน Vercel logs
+  // (error=OAuthCallback ใน URL ไม่บอกอะไรเลย ต้องอ่าน server log)
+  debug: true,
+  events: {
+    async signIn(message: any) {
+      console.log('[auth.events.signIn]', { user: message?.user?.email || message?.user?.name, account: message?.account?.provider })
+    },
+    async signOut() {
+      console.log('[auth.events.signOut]')
+    },
+  },
+  logger: {
+    error(code: string, metadata: any) {
+      console.error('[auth.logger.error]', code, JSON.stringify(metadata)?.slice(0, 600))
+    },
+    warn(code: string) {
+      console.warn('[auth.logger.warn]', code)
+    },
   },
 }
