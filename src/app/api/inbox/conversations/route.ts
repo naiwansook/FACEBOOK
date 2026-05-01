@@ -57,7 +57,11 @@ export async function GET(req: Request) {
     }
 
     const { data: conversations, error } = await query
-    if (error) throw error
+    if (error) {
+      console.error('[inbox/conversations] query error:', error)
+      throw error
+    }
+    console.log(`[inbox/conversations] pageId=${pageId || 'all'} filter=${filter} → ${conversations?.length || 0} convs`)
 
     // นับ unread รวม (สำหรับ badge)
     const { count: totalUnread } = await sb
