@@ -49,6 +49,24 @@ const sentimentConfig: Record<string, { label: string; emoji: string; color: str
   negative: { label: 'ไม่พอใจ', emoji: '😡', color: RED },
 }
 
+// Stable color per page so admins can spot which page a chat is from at a glance
+const PAGE_PALETTE = [
+  { bg: '#dbeafe', border: '#2563eb', text: '#1d4ed8', avatar: 'linear-gradient(135deg, #60a5fa, #2563eb)' }, // blue
+  { bg: '#dcfce7', border: '#16a34a', text: '#15803d', avatar: 'linear-gradient(135deg, #4ade80, #16a34a)' }, // green
+  { bg: '#fef3c7', border: '#d97706', text: '#b45309', avatar: 'linear-gradient(135deg, #fbbf24, #d97706)' }, // amber
+  { bg: '#fce7f3', border: '#db2777', text: '#be185d', avatar: 'linear-gradient(135deg, #f472b6, #db2777)' }, // pink
+  { bg: '#ede9fe', border: '#7c3aed', text: '#6d28d9', avatar: 'linear-gradient(135deg, #a78bfa, #7c3aed)' }, // violet
+  { bg: '#cffafe', border: '#0891b2', text: '#0e7490', avatar: 'linear-gradient(135deg, #22d3ee, #0891b2)' }, // cyan
+  { bg: '#fee2e2', border: '#dc2626', text: '#b91c1c', avatar: 'linear-gradient(135deg, #f87171, #dc2626)' }, // red
+  { bg: '#e0e7ff', border: '#4f46e5', text: '#4338ca', avatar: 'linear-gradient(135deg, #818cf8, #4f46e5)' }, // indigo
+]
+function pageColor(pageId?: string) {
+  if (!pageId) return PAGE_PALETTE[7]
+  let hash = 0
+  for (let i = 0; i < pageId.length; i++) hash = ((hash << 5) - hash + pageId.charCodeAt(i)) | 0
+  return PAGE_PALETTE[Math.abs(hash) % PAGE_PALETTE.length]
+}
+
 function timeAgo(d?: string): string {
   if (!d) return ''
   const diff = Date.now() - new Date(d).getTime()
@@ -137,7 +155,9 @@ export default function InboxPage() {
     loadConversations()
   }, [pageFilter, statusFilter])
 
-  // Poll every 8s for new messages
+  // Poll every 8s for new messages — re-arm when filters change so the poll
+  // uses the latest pageFilter/statusFilter (avoid stale closure overwriting
+  // filtered results)
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(() => {
@@ -152,7 +172,7 @@ export default function InboxPage() {
       }
     }, 8000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [activeConv?.id])
+  }, [activeConv?.id, pageFilter, statusFilter, search])
 
   // ── Send message ──
   async function handleSend() {
@@ -488,9 +508,11 @@ export default function InboxPage() {
             </div>
           ) : (
             <>
-              {/* Chat header */}
+              {/* Chat header — page-colored top stripe so admin always knows which page they're replying from */}
               <div style={{
-                padding: '14px 18px', background: SURFACE, borderBottom: `1.5px solid ${BORDER}`,
+                padding: '14px 18px', background: SURFACE,
+                borderBottom: `1.5px solid ${BORDER}`,
+                borderTop: `4px solid ${pageColor(activeConv.page_id).border}`,
                 display: 'flex', alignItems: 'center', gap: 12, boxShadow: SHADOW_SM,
               }}>
                 <button
@@ -500,14 +522,24 @@ export default function InboxPage() {
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <Avatar name={activeConv.customer_name} src={activeConv.customer_picture} size={42} />
+                <Avatar name={activeConv.customer_name} src={activeConv.customer_picture} size={42} ringColor={pageColor(activeConv.page_id).border} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color: TEXT, display: 'flex', alignItems: 'center', gap: 6 }}>
                     {activeConv.customer_name || 'ลูกค้า'}
                     {activeConv.is_starred && <Star size={13} fill={YELLOW} color={YELLOW} />}
                   </div>
-                  <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>
-                    📄 {activeConv.connected_pages?.page_name}
+                  <div style={{ marginTop: 3 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 9px', borderRadius: 999,
+                      background: pageColor(activeConv.page_id).bg,
+                      color: pageColor(activeConv.page_id).text,
+                      fontSize: 11, fontWeight: 800,
+                      border: `1px solid ${pageColor(activeConv.page_id).border}33`,
+                    }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: pageColor(activeConv.page_id).border }} />
+                      {activeConv.connected_pages?.page_name}
+                    </span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -839,9 +871,10 @@ function NavItem({ icon, label, active, badge }: { icon: ReactNode; label: strin
   )
 }
 
-function Avatar({ name, src, size = 40 }: { name?: string; src?: string; size?: number }) {
+function Avatar({ name, src, size = 40, ringColor }: { name?: string; src?: string; size?: number; ringColor?: string }) {
+  const ring = ringColor ? `2px solid ${ringColor}` : '1.5px solid white'
   if (src) {
-    return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1.5px solid white', boxShadow: SHADOW_SM }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+    return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: ring, boxShadow: SHADOW_SM }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
   }
   return (
     <div style={{
@@ -849,6 +882,7 @@ function Avatar({ name, src, size = 40 }: { name?: string; src?: string; size?: 
       background: 'linear-gradient(135deg, #818cf8, #6366f1)', color: 'white',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.4, fontWeight: 800, boxShadow: SHADOW_SM,
+      border: ring,
     }}>
       {(name || '?')[0].toUpperCase()}
     </div>
@@ -857,20 +891,27 @@ function Avatar({ name, src, size = 40 }: { name?: string; src?: string; size?: 
 
 function ConvItem({ conv, active, onClick }: { conv: any; active: boolean; onClick: () => void }) {
   const unread = conv.unread_count > 0
+  const pc = pageColor(conv.page_id)
   return (
     <div
       onClick={onClick}
       style={{
         display: 'flex', gap: 10, padding: '12px 14px', cursor: 'pointer',
         borderBottom: `1px solid ${BORDER}`,
-        background: active ? PRIMARY_LIGHT : (unread ? '#fafbff' : 'white'),
-        borderLeft: active ? `3px solid ${PRIMARY}` : '3px solid transparent',
+        background: active
+          ? PRIMARY_LIGHT
+          : (unread ? `linear-gradient(90deg, ${pc.bg} 0%, ${pc.bg}55 40%, white 100%)` : 'white'),
+        borderLeft: `4px solid ${active ? PRIMARY : pc.border}`,
         transition: 'background 0.15s',
       }}
       onMouseEnter={e => { if (!active) e.currentTarget.style.background = SURFACE2 }}
-      onMouseLeave={e => { if (!active) e.currentTarget.style.background = unread ? '#fafbff' : 'white' }}
+      onMouseLeave={e => {
+        if (!active) e.currentTarget.style.background = unread
+          ? `linear-gradient(90deg, ${pc.bg} 0%, ${pc.bg}55 40%, white 100%)`
+          : 'white'
+      }}
     >
-      <Avatar name={conv.customer_name} src={conv.customer_picture} size={40} />
+      <Avatar name={conv.customer_name} src={conv.customer_picture} size={40} ringColor={pc.border} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 2 }}>
           <div style={{
@@ -884,8 +925,18 @@ function ConvItem({ conv, active, onClick }: { conv: any; active: boolean; onCli
             {timeAgo(conv.last_message_at)}
           </div>
         </div>
-        <div style={{ fontSize: 11, color: MUTED, marginBottom: 4, fontWeight: 600 }}>
-          📄 {conv.connected_pages?.page_name}
+        <div style={{ marginBottom: 4 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 8px', borderRadius: 999,
+            background: pc.bg, color: pc.text,
+            fontSize: 10, fontWeight: 800,
+            border: `1px solid ${pc.border}33`,
+            maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: pc.border, flexShrink: 0 }} />
+            {conv.connected_pages?.page_name}
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
           <div style={{
