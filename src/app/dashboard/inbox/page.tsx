@@ -372,7 +372,6 @@ export default function InboxPage() {
                   <MessageSquare size={16} color="white" strokeWidth={2.5} />
                 </div>
                 <h1 style={{ fontSize: 17, fontWeight: 900, margin: 0, color: TEXT, letterSpacing: '-0.3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>กล่องข้อความ</h1>
-                <span title="build version" style={{ fontSize: 9, color: '#16a34a', fontWeight: 800, padding: '2px 6px', background: '#dcfce7', borderRadius: 6, flexShrink: 0 }}>v2-color</span>
               </div>
               <button
                 onClick={handleSync}

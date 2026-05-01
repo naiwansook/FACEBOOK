@@ -1,4 +1,7 @@
-node_modules/ 
-.next/ 
-.env.local 
+node_modules/
+.next/
+.env.local
 .vercel
+next-env.d.ts
+tsconfig.tsbuildinfo
+.claude/
