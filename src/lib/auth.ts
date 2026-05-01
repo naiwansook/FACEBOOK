@@ -14,8 +14,6 @@ export const authOptions = {
       },
     }),
   ],
-  // Session 60 วัน
-  session: { strategy: 'jwt' as const, maxAge: 60 * 24 * 60 * 60 },
   callbacks: {
     async session({ session, token }: any) {
       session.accessToken = token.accessToken
@@ -23,21 +21,7 @@ export const authOptions = {
     },
     async jwt({ token, account }: any) {
       if (account) {
-        // เก็บ short-lived ก่อน (กันพลาด)
-        let finalToken = account.access_token
-        // พยายามแลก long-lived (60 วัน) — ห้าม block OAuth callback ถ้า fail
-        try {
-          const url = `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.FACEBOOK_CLIENT_ID}&client_secret=${process.env.FACEBOOK_CLIENT_SECRET}&fb_exchange_token=${account.access_token}`
-          const ctrl = new AbortController()
-          const timer = setTimeout(() => ctrl.abort(), 4000)
-          const res = await fetch(url, { signal: ctrl.signal })
-          clearTimeout(timer)
-          const data = await res.json()
-          if (data?.access_token) finalToken = data.access_token
-        } catch {
-          // เงียบไป — ใช้ short-lived แทน
-        }
-        token.accessToken = finalToken
+        token.accessToken = account.access_token
       }
       return token
     },
@@ -46,4 +30,3 @@ export const authOptions = {
     signIn: '/login',
   },
 }
-// build: 1777645994
