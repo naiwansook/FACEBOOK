@@ -16,6 +16,36 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+const FB_API = 'https://graph.facebook.com/v19.0'
+
+/**
+ * ดึง page_access_tokens สดใหม่จาก FB ผ่าน /me/accounts ของ user_token
+ * → return Map<page_id, page_access_token>
+ * ใช้เมื่อ page tokens ใน DB หมดอายุ (FB error code 190)
+ */
+async function fetchFreshPageTokens(userToken: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  try {
+    let url: string | undefined =
+      `${FB_API}/me/accounts?fields=id,access_token&limit=100&access_token=${userToken}`
+    while (url) {
+      const r = await fetch(url)
+      const d = await r.json()
+      if (d.error) {
+        console.error('[sync] /me/accounts failed:', d.error.message)
+        break
+      }
+      for (const p of (d.data || [])) {
+        if (p.id && p.access_token) map.set(p.id, p.access_token)
+      }
+      url = d.paging?.next
+    }
+  } catch (e: any) {
+    console.error('[sync] fetchFreshPageTokens threw:', e.message)
+  }
+  return map
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -42,6 +72,34 @@ export async function POST(req: Request) {
     const { data: pages } = await pageQuery
     if (!pages || pages.length === 0) {
       return NextResponse.json({ synced: 0, message: 'No pages to sync' })
+    }
+
+    // ── Pre-flight: ตรวจ page_access_token ของแต่ละเพจ ──
+    // ถ้าเจอ token หมดอายุ (code 190) → ดึง tokens ใหม่จาก /me/accounts
+    // โดยใช้ user_access_token แล้วอัพเดท DB ก่อน sync
+    let freshTokens: Map<string, string> | null = null
+    for (const page of pages) {
+      try {
+        const r = await fetch(
+          `${FB_API}/me?fields=id&access_token=${page.page_access_token}`
+        )
+        const d = await r.json()
+        if (d.error?.code === 190) {
+          if (!freshTokens) {
+            console.log('[sync] page tokens invalid → fetching fresh from /me/accounts')
+            freshTokens = await fetchFreshPageTokens(session.accessToken as string)
+          }
+          const newToken = freshTokens.get(page.page_id)
+          if (newToken && newToken !== page.page_access_token) {
+            await sb
+              .from('connected_pages')
+              .update({ page_access_token: newToken })
+              .eq('id', page.id)
+            page.page_access_token = newToken
+            console.log(`[sync] refreshed page_access_token for ${page.page_name}`)
+          }
+        }
+      } catch {}
     }
 
     const summary: any[] = []
