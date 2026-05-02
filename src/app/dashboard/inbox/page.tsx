@@ -171,33 +171,28 @@ export default function InboxPage() {
   }
 
   // ── Initial load + polling ──
+  // ลด rate การยิง FB API หลังเจอ "Application request limit reached"
+  // (Dev mode FB ~200 calls/hour)
   useEffect(() => {
     loadConversations()
     loadQuickReplies()
-    // Trigger one sync on mount so newly connected pages get subscribed
-    // to the FB webhook immediately (don't await — runs in background)
-    backgroundSync().then(() => loadConversations())
+    // ไม่ trigger sync ตอน mount แล้ว — webhook subscribe ทำตอนกด Sync
+    // หรือทุก 10 นาทีในพื้นหลัง
   }, [])
 
-  // เมื่อ user เปลี่ยนเพจหรือ filter → load จาก DB ก่อน + sync เพจนั้น
-  // ในพื้นหลัง ให้ข้อความขึ้นทันที แม้เพจนั้นยังไม่เคย sync
+  // เปลี่ยนเพจ → load จาก DB ทันที (ไม่ trigger sync เอง)
+  // ถ้าผู้ใช้ต้องการข้อมูลใหม่ → กดปุ่ม Sync เอง
   useEffect(() => {
     loadConversations()
-    if (pageFilter) {
-      setPageSyncing(true)
-      backgroundSync(pageFilter)
-        .then(() => loadConversations())
-        .finally(() => setPageSyncing(false))
-    }
   }, [pageFilter, statusFilter])
 
-  // Poll every 8s for new messages — re-arm when filters change so the poll
-  // uses the latest pageFilter/statusFilter (avoid stale closure overwriting
-  // filtered results). Every 8th tick (~64s) also runs a background sync so
-  // we catch anything the FB webhook might miss without nagging the user.
+  // Poll DB ทุก 30 วิ (เร็วพอสำหรับ user แต่ไม่กิน rate limit FB
+  // เพราะ poll DB ของเรา ไม่ใช่ FB)
+  // Background sync FB ทุก 10 นาที (กัน webhook ตก)
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     let tick = 0
+    const SYNC_EVERY_TICKS = 20  // 20 × 30s = 10 นาที
     pollRef.current = setInterval(() => {
       tick++
       loadConversations()
@@ -209,10 +204,10 @@ export default function InboxPage() {
           })
           .catch(() => {})
       }
-      if (tick % 8 === 0) {
-        backgroundSync().then(() => loadConversations())
+      if (tick % SYNC_EVERY_TICKS === 0) {
+        backgroundSync()
       }
-    }, 8000)
+    }, 30000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeConv?.id, pageFilter, statusFilter, search])
 
