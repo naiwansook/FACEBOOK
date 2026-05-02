@@ -62,19 +62,12 @@ export const authOptions = {
     },
     async jwt({ token, account }: any) {
       try {
-        // Initial login → exchange เป็น long-lived ทันที (timeout 4s ป้องกัน
-        // OAuth callback timeout). ถ้า fail → mark needsExchange ลองใหม่ครั้งหน้า
+        // Initial login → save short-lived ทันที + mark needsExchange
+        // ห้าม await exchange ที่นี่ — เคย break OAuth callback ใน timeout
         if (account?.access_token) {
           token.accessToken = account.access_token
           token.tokenIssuedAt = Date.now()
-          const longLived = await exchangeForLongLivedToken(account.access_token, 4000)
-          if (longLived) {
-            token.accessToken = longLived
-            token.tokenIssuedAt = Date.now()
-            token.needsExchange = false
-          } else {
-            token.needsExchange = true
-          }
+          token.needsExchange = true
           return token
         }
 
