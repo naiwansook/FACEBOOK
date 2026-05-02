@@ -106,8 +106,9 @@ export async function GET(req: Request) {
   // Fetch user profile
   let profile: any = null
   try {
+    // ใช้ /me?fields=id,name (ไม่เอา email เพราะอาจไม่มี email scope)
     const r = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=${tokenData.access_token}`
+      `https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${tokenData.access_token}`
     )
     profile = await r.json()
     steps.push({

@@ -17,9 +17,13 @@ export async function GET(req: Request) {
   fbUrl.searchParams.set('client_id', process.env.FACEBOOK_CLIENT_ID || '')
   fbUrl.searchParams.set('redirect_uri', redirectUri)
   fbUrl.searchParams.set('state', state)
-  fbUrl.searchParams.set('scope', 'public_profile,email')
-  // ตั้งใจใช้แค่ public_profile,email — scope ขั้นต่ำที่ทุกแอปต้องมี
-  // เพื่อทดสอบว่า OAuth ใช้งานได้โดยไม่ติดเรื่อง permission review
+  // ใช้ scope ที่ตรงกับ Use Cases ที่ FB App มีอยู่
+  // (Marketing API + Pages + Messenger) — ไม่รวม public_profile
+  // เพราะ App ไม่ได้เพิ่ม "Authentication" use case
+  fbUrl.searchParams.set(
+    'scope',
+    'business_management,ads_management,ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_metadata,pages_manage_posts,pages_messaging'
+  )
 
   const res = NextResponse.redirect(fbUrl.toString())
   // เก็บ state ใน cookie เพื่อตรวจตอน callback
