@@ -43,13 +43,30 @@ export const authOptions = {
     FacebookProvider({
       clientId: process.env.FACEBOOK_CLIENT_ID!,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-      // ใช้ default provider config (token URL + userinfo URL) ของ next-auth
-      // อย่า override ที่นี่ — ทำให้ openid-client ส่ง request format ที่ FB
-      // ไม่ตอบกลับ → OAuthCallback error
       authorization: {
         params: {
           scope: 'business_management,ads_management,ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_metadata,pages_manage_posts,pages_messaging',
-          // ไม่ใส่ redirect_uri / auth_type - ปล่อยให้ NextAuth + FB จัดการเอง
+        },
+      },
+      // 🎯 Override userinfo เพราะ default ของ next-auth v4.24.7 เรียก
+      // https://graph.facebook.com/me (ไม่มี version) ด้วย Bearer header →
+      // FB ตอบ 403 Forbidden → OAUTH_CALLBACK_ERROR
+      // แก้: ใช้ v19 endpoint + ส่ง access_token เป็น query param แทน
+      userinfo: {
+        url: 'https://graph.facebook.com/v19.0/me',
+        params: { fields: 'id,name,email,picture' },
+        async request({ tokens, provider }: any) {
+          const u = new URL(provider.userinfo.url)
+          for (const [k, v] of Object.entries(provider.userinfo.params || {})) {
+            u.searchParams.set(k, String(v))
+          }
+          u.searchParams.set('access_token', tokens.access_token)
+          const r = await fetch(u.toString())
+          if (!r.ok) {
+            const body = await r.text()
+            throw new Error(`FB userinfo ${r.status}: ${body.slice(0, 200)}`)
+          }
+          return r.json()
         },
       },
     }),
