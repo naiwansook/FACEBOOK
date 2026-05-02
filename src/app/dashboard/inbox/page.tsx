@@ -147,17 +147,24 @@ export default function InboxPage() {
   }
 
   // ── Background sync (silent — no spinner) ──
-  // Pulls fresh data + ensures every connected page is webhook-subscribed.
-  // The webhook then pushes new messages real-time to the DB; the 8s
-  // conversation poll surfaces them in the UI.
-  // ถ้าส่ง pageId เข้ามา → sync เฉพาะเพจนั้น (เร็วกว่า sync ทุกเพจ)
   async function backgroundSync(pageId?: string) {
     try {
-      await fetch('/api/inbox/sync', {
+      const res = await fetch('/api/inbox/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pageId ? { pageId } : {}),
       })
+      const data = await res.json()
+      // ถ้า sync มี error → แสดงให้ user เห็น (ไม่งั้น user งง ว่าทำไมแชทไม่มี)
+      if (data?.summary?.length) {
+        const errs: string[] = []
+        for (const p of data.summary) {
+          if (p.errors?.length) {
+            errs.push(`${p.page_name}: ${p.errors.join('; ')}`)
+          }
+        }
+        if (errs.length) setErrorBanner(`Sync error → ${errs.join(' | ')}`)
+      }
     } catch {
       // ignore — next interval will retry
     }
