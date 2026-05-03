@@ -60,7 +60,7 @@ export const authOptions = {
         params: { fields: 'id,name,email,picture' },
         async request({ tokens, provider }: any) {
           const tokenSnip = String(tokens.access_token || '').slice(0, 12) + '...'
-          console.log('[auth.userinfo] start — token=', tokenSnip)
+          console.error('[auth.userinfo] start — token=', tokenSnip)
 
           // ลอง /me ก่อน
           const u = new URL(provider.userinfo.url)
@@ -72,7 +72,7 @@ export const authOptions = {
             const r = await fetch(u.toString())
             const body = await r.text()
             if (r.ok) {
-              console.log('[auth.userinfo] /me OK')
+              console.error('[auth.userinfo] /me OK')
               return JSON.parse(body)
             }
             console.error(`[auth.userinfo] /me ${r.status}: ${body.slice(0, 300)}`)
@@ -87,12 +87,12 @@ export const authOptions = {
               `https://graph.facebook.com/v19.0/debug_token?input_token=${tokens.access_token}&access_token=${appToken}`
             )
             const dbody = await dr.text()
-            console.log(`[auth.userinfo] debug_token ${dr.status}: ${dbody.slice(0, 300)}`)
+            console.error(`[auth.userinfo] debug_token ${dr.status}: ${dbody.slice(0, 300)}`)
             if (dr.ok) {
               const dj = JSON.parse(dbody)
               const userId = dj?.data?.user_id
               if (userId) {
-                console.log('[auth.userinfo] fallback success, user_id=', userId)
+                console.error('[auth.userinfo] fallback success, user_id=', userId)
                 return { id: userId, name: 'User', email: null, picture: null }
               }
             }
@@ -109,7 +109,7 @@ export const authOptions = {
               `https://graph.facebook.com/v19.0/me?fields=id&access_token=${appToken}|${tokens.access_token}`
             )
             const ibody = await ir.text()
-            console.log(`[auth.userinfo] /me with appsecret_proof ${ir.status}: ${ibody.slice(0, 200)}`)
+            console.error(`[auth.userinfo] /me with appsecret_proof ${ir.status}: ${ibody.slice(0, 200)}`)
             if (ir.ok) {
               const ij = JSON.parse(ibody)
               if (ij?.id) return { id: ij.id, name: 'User', email: null, picture: null }
