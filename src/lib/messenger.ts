@@ -48,21 +48,24 @@ export async function sendTextMessage(
   pageToken: string,
   recipientPsid: string,
   text: string,
-  messagingType: 'RESPONSE' | 'UPDATE' | 'MESSAGE_TAG' = 'RESPONSE'
-): Promise<SendMessageResult> {
+  messagingType: 'RESPONSE' | 'UPDATE' | 'MESSAGE_TAG' = 'RESPONSE',
+  tag?: string,  // ต้องส่งคู่กับ messagingType='MESSAGE_TAG' เช่น HUMAN_AGENT
+): Promise<SendMessageResult & { errorCode?: number }> {
   try {
+    const body: any = {
+      messaging_type: messagingType,
+      recipient: { id: recipientPsid },
+      message: { text },
+    }
+    if (tag) body.tag = tag
     const res = await fetch(`${FB_API}/me/messages?access_token=${pageToken}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_type: messagingType,
-        recipient: { id: recipientPsid },
-        message: { text },
-      }),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     if (data.error) {
-      return { success: false, error: data.error.message }
+      return { success: false, error: data.error.message, errorCode: data.error.code }
     }
     return {
       success: true,
