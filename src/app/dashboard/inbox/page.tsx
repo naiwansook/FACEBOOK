@@ -182,10 +182,41 @@ export default function InboxPage() {
     // หรือทุก 10 นาทีในพื้นหลัง
   }, [])
 
-  // เปลี่ยนเพจ → load จาก DB ทันที (ไม่ trigger sync เอง)
-  // ถ้าผู้ใช้ต้องการข้อมูลใหม่ → กดปุ่ม Sync เอง
+  // เปลี่ยนเพจ → load จาก DB ก่อน
+  // ถ้าเพจนั้นยังไม่มีข้อความใน DB เลย (ไม่เคย sync) → auto-trigger sync
+  // throttle ด้วย ref → ไม่ sync ซ้ำเพจเดียวกันบ่อยกว่า 2 นาที
+  const lastPageSyncRef = useRef<Record<string, number>>({})
   useEffect(() => {
-    loadConversations()
+    let cancelled = false
+    ;(async () => {
+      // Fetch ก่อน เช็ค response ตรงๆ (ไม่พึ่ง state ที่ยังไม่ re-render)
+      const params = new URLSearchParams()
+      if (pageFilter) params.set('pageId', pageFilter)
+      if (statusFilter !== 'all') params.set('filter', statusFilter)
+      if (search) params.set('q', search)
+      setLoadingList(true)
+      const res = await fetch(`/api/inbox/conversations?${params.toString()}`).then(r => r.json())
+      if (cancelled) return
+      setConversations(res.conversations || [])
+      setPages(res.pages || [])
+      setTotalUnread(res.totalUnread || 0)
+      setUnreadByPage(res.unreadByPage || {})
+      setLoadingList(false)
+
+      // Auto-sync ถ้าเลือกเพจที่ยังไม่มี conv ใน DB + ไม่ได้ sync ใน 2 นาทีล่าสุด
+      if (pageFilter && (res.conversations || []).length === 0) {
+        const now = Date.now()
+        const last = lastPageSyncRef.current[pageFilter] || 0
+        if (now - last > 2 * 60 * 1000) {
+          lastPageSyncRef.current[pageFilter] = now
+          setPageSyncing(true)
+          await backgroundSync(pageFilter)
+          if (!cancelled) await loadConversations()
+          if (!cancelled) setPageSyncing(false)
+        }
+      }
+    })()
+    return () => { cancelled = true }
   }, [pageFilter, statusFilter])
 
   // Poll DB ทุก 30 วิ (เร็วพอสำหรับ user แต่ไม่กิน rate limit FB
