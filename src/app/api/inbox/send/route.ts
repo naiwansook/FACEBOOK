@@ -48,34 +48,24 @@ export async function POST(req: Request) {
     // optimistic typing indicator
     sendSenderAction(page.page_access_token, conv.fb_psid, 'typing_on').catch(() => {})
 
-    // ส่งข้อความ — ลอง RESPONSE ก่อน (ภายใน 24 ชม. ของ last message ลูกค้า)
-    let result = await sendTextMessage(
+    // ส่งข้อความ — RESPONSE (ภายใน 24 ชม. ของ last message ลูกค้า)
+    // หมายเหตุ: ไม่ใช้ HUMAN_AGENT tag retry เพราะต้องผ่าน FB App Review
+    // (error #100 — ใช้ tag นี้ไม่ได้จนกว่าจะได้รับอนุมัติ)
+    const result = await sendTextMessage(
       page.page_access_token,
       conv.fb_psid,
       text.trim(),
       'RESPONSE'
     )
 
-    // ถ้าเจอ FB error #10 (outside policy window — ลูกค้าทักมาเกิน 24 ชม.)
-    // → retry ด้วย MESSAGE_TAG: HUMAN_AGENT (อนุญาต 7 วัน)
-    if (!result.success && result.errorCode === 10) {
-      console.log('[send] retrying with HUMAN_AGENT tag (outside 24h window)')
-      result = await sendTextMessage(
-        page.page_access_token,
-        conv.fb_psid,
-        text.trim(),
-        'MESSAGE_TAG',
-        'HUMAN_AGENT'
-      )
-    }
-
     if (!result.success) {
-      // ถ้ายังไม่ได้ ทำให้ error ชัดเจนขึ้น
       let userError = result.error || 'Send failed'
       if (result.errorCode === 10) {
-        userError = 'ลูกค้าทักมานานเกินกำหนด (FB จำกัด 24 ชม. — Human Agent feature ให้ 7 วัน) ขออภัย ส่งไม่ได้แล้ว'
+        userError = '⚠️ ลูกค้าทักมาเกิน 24 ชม. — Facebook ห้ามตอบ (Messenger 24-hour rule) ต้องรอลูกค้าทักก่อน หรือขอ Human Agent feature จาก FB App Review'
+      } else if (result.errorCode === 100) {
+        userError = '⚠️ FB App ยังไม่ได้รับอนุมัติ Human Agent feature — submit App Review ที่ developers.facebook.com'
       } else if (result.errorCode === 190) {
-        userError = 'Page token หมดอายุ — กลับไป Sync แล้วลองใหม่'
+        userError = '⚠️ Page token หมดอายุ — กลับไปกด Sync แล้วลองใหม่'
       }
       await sb.from('inbox_messages').insert({
         conversation_id: conv.id,
