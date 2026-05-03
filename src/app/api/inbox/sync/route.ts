@@ -103,8 +103,15 @@ export async function POST(req: Request) {
     }
 
     const summary: any[] = []
+    const startTime = Date.now()
+    const MAX_DURATION_MS = 50 * 1000  // เผื่อ 10s ก่อน Vercel timeout 60s
 
     for (const page of pages) {
+      // กัน timeout — ถ้าใช้เวลามากแล้ว break ออก ที่เหลือทำใน sync รอบหน้า
+      if (Date.now() - startTime > MAX_DURATION_MS) {
+        summary.push({ page_name: page.page_name, skipped: 'timeout protection' })
+        continue
+      }
       const pageResult: any = {
         page_id: page.page_id,
         page_name: page.page_name,
@@ -124,6 +131,11 @@ export async function POST(req: Request) {
         console.log(`[sync] ${page.page_name}: fetched ${fbConvs.length} conversations from FB`)
 
         for (const fbConv of fbConvs) {
+          // กัน timeout ใน loop
+          if (Date.now() - startTime > MAX_DURATION_MS) {
+            pageResult.errors.push('partial: timeout protection')
+            break
+          }
           // หา PSID ลูกค้า (participant ที่ไม่ใช่ page)
           const customer = (fbConv.participants?.data || []).find(p => p.id !== page.page_id)
           if (!customer) continue
@@ -175,9 +187,10 @@ export async function POST(req: Request) {
               .eq('id', convId)
           }
 
-          // Fetch messages of this conversation (last 25)
+          // Fetch messages — แค่ 10 ล่าสุด (ลด workload)
+          // ข้อความเก่าจะมาเองผ่าน webhook real-time แล้ว
           try {
-            const fbMsgs = await listMessages(fbConv.id, page.page_access_token, 25)
+            const fbMsgs = await listMessages(fbConv.id, page.page_access_token, 10, 1)
             for (const m of fbMsgs) {
               const isFromPage = m.from?.id === page.page_id
               const messageText = m.message || null

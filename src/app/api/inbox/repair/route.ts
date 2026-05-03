@@ -11,6 +11,11 @@ export const maxDuration = 60
 
 const FB_API = 'https://graph.facebook.com/v19.0'
 
+// Allow GET ด้วย (เปิด URL ตรงได้ ไม่ต้องใช้ console paste)
+export async function GET(req: Request) {
+  return POST(req)
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session?.accessToken) {
@@ -19,8 +24,11 @@ export async function POST(req: Request) {
   const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json().catch(() => ({}))
-  const onlyPageId: string | undefined = body.pageId
+  // รับ pageId จาก body (POST) หรือ query (GET)
+  const url = new URL(req.url)
+  const queryPageId = url.searchParams.get('pageId') || undefined
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
+  const onlyPageId: string | undefined = body.pageId || queryPageId
 
   const sb = supabaseAdmin()
 
