@@ -59,66 +59,63 @@ export const authOptions = {
         url: 'https://graph.facebook.com/v19.0/me',
         params: { fields: 'id,name,email,picture' },
         async request({ tokens, provider }: any) {
-          const tokenSnip = String(tokens.access_token || '').slice(0, 12) + '...'
-          console.error('[auth.userinfo] start — token=', tokenSnip)
+          // เก็บ diagnostic ใน throw message ตรงๆ (console.error ไม่ถึง Vercel logs)
+          const diag: string[] = []
+          const tokenLen = String(tokens.access_token || '').length
+          diag.push(`tokenLen=${tokenLen}`)
 
-          // ลอง /me ก่อน
-          const u = new URL(provider.userinfo.url)
-          for (const [k, v] of Object.entries(provider.userinfo.params || {})) {
-            u.searchParams.set(k, String(v))
-          }
-          u.searchParams.set('access_token', tokens.access_token)
+          // 1. /me + access_token query param
           try {
+            const u = new URL(provider.userinfo.url)
+            for (const [k, v] of Object.entries(provider.userinfo.params || {})) {
+              u.searchParams.set(k, String(v))
+            }
+            u.searchParams.set('access_token', tokens.access_token)
             const r = await fetch(u.toString())
             const body = await r.text()
-            if (r.ok) {
-              console.error('[auth.userinfo] /me OK')
-              return JSON.parse(body)
-            }
-            console.error(`[auth.userinfo] /me ${r.status}: ${body.slice(0, 300)}`)
+            if (r.ok) return JSON.parse(body)
+            diag.push(`/me=${r.status}:${body.slice(0, 100)}`)
           } catch (e: any) {
-            console.error('[auth.userinfo] /me threw:', e?.message)
+            diag.push(`/me_threw=${e?.message?.slice(0, 80)}`)
           }
 
-          // Fallback: debug_token ผ่าน APP_TOKEN
+          // 2. debug_token ผ่าน APP_TOKEN
           try {
             const appToken = `${process.env.FACEBOOK_CLIENT_ID}|${process.env.FACEBOOK_CLIENT_SECRET}`
             const dr = await fetch(
               `https://graph.facebook.com/v19.0/debug_token?input_token=${tokens.access_token}&access_token=${appToken}`
             )
             const dbody = await dr.text()
-            console.error(`[auth.userinfo] debug_token ${dr.status}: ${dbody.slice(0, 300)}`)
             if (dr.ok) {
               const dj = JSON.parse(dbody)
               const userId = dj?.data?.user_id
-              if (userId) {
-                console.error('[auth.userinfo] fallback success, user_id=', userId)
-                return { id: userId, name: 'User', email: null, picture: null }
-              }
+              if (userId) return { id: String(userId), name: 'User', email: null, picture: null }
+              diag.push(`dt_no_user_id:${dbody.slice(0, 100)}`)
+            } else {
+              diag.push(`dt=${dr.status}:${dbody.slice(0, 100)}`)
             }
           } catch (e: any) {
-            console.error('[auth.userinfo] debug_token threw:', e?.message)
+            diag.push(`dt_threw=${e?.message?.slice(0, 80)}`)
           }
 
-          // Fallback สุดท้าย: parse user_id จาก access_token เอง (FB encode ไว้)
-          // หรืออย่างน้อย return profile ปลอม เพื่อให้ OAuth ผ่าน
-          // (จะหา user ใน DB ตาม FB id ทีหลังไม่ได้ แต่ session อย่างน้อยมี)
+          // 3. /me?access_token=APP|USER (appsecret_proof bypass attempt)
           try {
             const appToken = `${process.env.FACEBOOK_CLIENT_ID}|${process.env.FACEBOOK_CLIENT_SECRET}`
             const ir = await fetch(
-              `https://graph.facebook.com/v19.0/me?fields=id&access_token=${appToken}|${tokens.access_token}`
+              `https://graph.facebook.com/v19.0/me?fields=id&access_token=${encodeURIComponent(appToken + '|' + tokens.access_token)}`
             )
             const ibody = await ir.text()
-            console.error(`[auth.userinfo] /me with appsecret_proof ${ir.status}: ${ibody.slice(0, 200)}`)
             if (ir.ok) {
               const ij = JSON.parse(ibody)
               if (ij?.id) return { id: ij.id, name: 'User', email: null, picture: null }
             }
+            diag.push(`me_proof=${ir.status}:${ibody.slice(0, 100)}`)
           } catch (e: any) {
-            console.error('[auth.userinfo] /me retry threw:', e?.message)
+            diag.push(`me_proof_threw=${e?.message?.slice(0, 80)}`)
           }
 
-          throw new Error('FB userinfo unavailable — ดู Vercel logs แท็ก [auth.userinfo]')
+          // ทุกวิธีล้ม → throw พร้อม diagnostic ในตัว message
+          throw new Error(`FB userinfo failed: ${diag.join(' | ')}`)
         },
       },
     }),
