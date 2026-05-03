@@ -172,14 +172,23 @@ export default function InboxPage() {
     }
   }
 
-  // ── Initial load + polling ──
-  // ลด rate การยิง FB API หลังเจอ "Application request limit reached"
-  // (Dev mode FB ~200 calls/hour)
+  // ── Initial load + auto-sync on mount (with throttle) ──
   useEffect(() => {
     loadConversations()
     loadQuickReplies()
-    // ไม่ trigger sync ตอน mount แล้ว — webhook subscribe ทำตอนกด Sync
-    // หรือทุก 10 นาทีในพื้นหลัง
+    // Auto-sync ตอนเปิดแอพ (กัน rate limit ด้วย localStorage throttle 1 นาที)
+    try {
+      const last = Number(localStorage.getItem('inbox_last_mount_sync') || 0)
+      if (Date.now() - last > 60 * 1000) {
+        localStorage.setItem('inbox_last_mount_sync', String(Date.now()))
+        setSyncing(true)
+        backgroundSync()
+          .then(() => loadConversations())
+          .finally(() => setSyncing(false))
+      }
+    } catch {
+      // localStorage may fail in private mode — ไม่เป็นไร
+    }
   }, [])
 
   // เปลี่ยนเพจ → load จาก DB ก่อน
@@ -307,21 +316,6 @@ export default function InboxPage() {
       setErrorBanner(e.message)
     }
     setAiLoading(false)
-  }
-
-  // ── Sync from Facebook ──
-  async function handleSync() {
-    setSyncing(true)
-    setErrorBanner(null)
-    try {
-      const res = await fetch('/api/inbox/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      const data = await res.json()
-      if (!res.ok) setErrorBanner(data.error || 'Sync ล้มเหลว')
-      await loadConversations()
-    } catch (e: any) {
-      setErrorBanner(e.message)
-    }
-    setSyncing(false)
   }
 
   // ── Conversation actions ──
@@ -527,15 +521,15 @@ export default function InboxPage() {
                 </div>
                 <h1 style={{ fontSize: 17, fontWeight: 900, margin: 0, color: TEXT, letterSpacing: '-0.3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>กล่องข้อความ</h1>
               </div>
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                title="ดึงข้อความล่าสุดจาก Facebook"
-                style={{ ...btnGhost, padding: '7px 11px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, flexShrink: 0, minWidth: 78, justifyContent: 'center' }}
-              >
-                <RefreshCw size={13} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
-                {syncing ? 'โหลด...' : 'Sync'}
-              </button>
+              {(syncing || pageSyncing) && (
+                <div title="กำลัง sync จาก Facebook" style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  fontSize: 10, color: MUTED, fontWeight: 700, flexShrink: 0,
+                }}>
+                  <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                  ซิงค์...
+                </div>
+              )}
             </div>
 
             {/* Search */}
