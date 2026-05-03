@@ -19,15 +19,37 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url)
   const convId = url.searchParams.get('convId')
-  if (!convId) return NextResponse.json({ error: 'missing convId' }, { status: 400 })
+  const pageId = url.searchParams.get('pageId')
+  const customerName = url.searchParams.get('name')
 
   const sb = supabaseAdmin()
-  const { data: conv } = await sb
-    .from('conversations')
-    .select('id, fb_conversation_id, page_id, customer_name')
-    .eq('id', convId)
-    .eq('user_id', userId)
-    .single()
+  let conv: any = null
+
+  if (convId) {
+    const { data } = await sb
+      .from('conversations')
+      .select('id, fb_conversation_id, page_id, customer_name')
+      .eq('id', convId)
+      .eq('user_id', userId)
+      .single()
+    conv = data
+  } else if (pageId) {
+    // ใช้ pageId + name (หรือ recent) — หา conv ล่าสุด
+    let q = sb
+      .from('conversations')
+      .select('id, fb_conversation_id, page_id, customer_name')
+      .eq('user_id', userId)
+      .eq('page_id', pageId)
+      .order('last_message_at', { ascending: false })
+      .limit(1)
+    if (customerName) q = q.ilike('customer_name', `%${customerName}%`)
+    const { data } = await q.maybeSingle()
+    conv = data
+  }
+
+  if (!conv) {
+    return NextResponse.json({ error: 'missing convId or pageId(+name)' }, { status: 400 })
+  }
 
   if (!conv?.fb_conversation_id) {
     return NextResponse.json({ error: 'conv not found or no fb_conversation_id' }, { status: 404 })
