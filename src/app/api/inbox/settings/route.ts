@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ settings: [] })
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ settings: [] })
 
     const { searchParams } = new URL(req.url)
@@ -33,7 +33,7 @@ export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()

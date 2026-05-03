@@ -39,9 +39,14 @@ export async function getFbUserIdFromToken(accessToken: string): Promise<string 
   }
 }
 
-/** ดึง user UUID จาก facebook access token (ใช้บ่อยใน API routes) */
-export async function getUserIdFromFbToken(accessToken: string): Promise<string | null> {
-  const fbId = await getFbUserIdFromToken(accessToken)
+/** ดึง user UUID จาก facebook access token (ใช้บ่อยใน API routes)
+ * รับ fbId hint (จาก session.fbUserId) เพื่อข้าม FB API call → กัน rate limit
+ */
+export async function getUserIdFromFbToken(
+  accessToken: string,
+  fbIdHint?: string | null,
+): Promise<string | null> {
+  const fbId = fbIdHint || await getFbUserIdFromToken(accessToken)
   if (!fbId) return null
   const sb = supabaseAdmin()
   const { data: user } = await sb

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session?.accessToken) return NextResponse.json({ error: 'no session' }, { status: 401 })
 
-  const userId = await getUserIdFromFbToken(session.accessToken as string)
+  const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
   if (!userId) return NextResponse.json({ error: 'no user' }, { status: 401 })
 
   const url = new URL(req.url)

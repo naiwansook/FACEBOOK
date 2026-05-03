@@ -24,10 +24,12 @@ export async function GET() {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
 
-    // ใช้ helper ที่มี fallback ไป debug_token (กัน rate limit บน /me)
-    const fbId = await getFbUserIdFromToken(userToken)
+    // ใช้ FB user_id จาก session ก่อน (เก็บตอน login → ไม่ call FB API)
+    // ถ้าไม่มี → fall back ไป /me + debug_token
+    const fbId = (session as any).fbUserId || await getFbUserIdFromToken(userToken)
     if (!fbId) {
-      return NextResponse.json({ campaigns: [], summary: null, reason: 'fb_token_expired' })
+      // ถึงแม้ FB API ทุกตัวล้ม → ถือว่ายังมี session อยู่ ไม่ใช่ token expired
+      return NextResponse.json({ campaigns: [], summary: null })
     }
 
     const { data: user } = await supabase

@@ -127,9 +127,12 @@ export const authOptions = {
   callbacks: {
     async session({ session, token }: any) {
       session.accessToken = token?.accessToken
+      // เก็บ FB user_id ใน session → routes ไม่ต้อง call /me ทุก request
+      // (ป้องกัน rate limit + เร็วขึ้น)
+      session.fbUserId = token?.fbUserId
       return session
     },
-    async jwt({ token, account }: any) {
+    async jwt({ token, account, profile }: any) {
       try {
         // Initial login → save short-lived ทันที + mark needsExchange
         // ห้าม await exchange ที่นี่ — เคย break OAuth callback ใน timeout
@@ -137,6 +140,8 @@ export const authOptions = {
           token.accessToken = account.access_token
           token.tokenIssuedAt = Date.now()
           token.needsExchange = true
+          // FB user_id มาจาก OAuth → เก็บไว้ ไม่ต้อง call /me ทุก request
+          token.fbUserId = account.providerAccountId || (profile as any)?.id
           return token
         }
 

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ conversations: [], pages: [] })
     }
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ conversations: [], pages: [] })
 
     const { searchParams } = new URL(req.url)

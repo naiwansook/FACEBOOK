@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ replies: [] })
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ replies: [] })
 
     const sb = supabaseAdmin()
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { shortcut, title, message, pageId } = await req.json()
@@ -56,7 +56,7 @@ export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)

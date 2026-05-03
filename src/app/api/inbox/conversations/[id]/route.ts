@@ -12,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const sb = supabaseAdmin()
@@ -54,7 +54,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string)
+    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
