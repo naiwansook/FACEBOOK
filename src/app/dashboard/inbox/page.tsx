@@ -157,6 +157,13 @@ export default function InboxPage() {
         body: JSON.stringify(pageId ? { pageId } : {}),
       })
       const data = await res.json()
+      // หลัง sync เสร็จ → trigger repair ถ้ามี empty messages ค้างอยู่
+      // (ทำเงียบๆ ไม่รอผล ไม่ block UI)
+      fetch('/api/inbox/repair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pageId ? { pageId } : {}),
+      }).then(() => loadConversations()).catch(() => {})
       // ถ้า sync มี error → แสดงให้ user เห็น (ไม่งั้น user งง ว่าทำไมแชทไม่มี)
       if (data?.summary?.length) {
         const errs: string[] = []
@@ -1137,13 +1144,20 @@ function MessageBubble({ message: m, customerName, customerPic }: { message: any
           borderTopLeftRadius: out ? 16 : 4,
         }}>
           {m.message_text}
-          {(m.attachments || []).map((a: any, i: number) => (
-            a.type === 'image' && a.url ? (
-              <img key={i} src={a.url} style={{ maxWidth: 200, marginTop: m.message_text ? 6 : 0, borderRadius: 8, display: 'block' }} alt="" />
-            ) : a.url ? (
-              <div key={i} style={{ marginTop: m.message_text ? 6 : 0, fontSize: 11 }}>📎 {a.name || 'ไฟล์แนบ'}</div>
-            ) : null
-          ))}
+          {(() => {
+            // ถ้ามี image attachment แล้ว → ไม่แสดง file/link attachments อื่น
+            // (FB มักส่ง sticker + share ว่างคู่กัน)
+            const atts = (m.attachments || []) as any[]
+            const hasImage = atts.some(a => a.type === 'image' && a.url)
+            const filtered = hasImage ? atts.filter(a => a.type === 'image' && a.url) : atts
+            return filtered.map((a, i) => (
+              a.type === 'image' && a.url ? (
+                <img key={i} src={a.url} style={{ maxWidth: 200, marginTop: m.message_text ? 6 : 0, borderRadius: 8, display: 'block' }} alt="" />
+              ) : a.url ? (
+                <div key={i} style={{ marginTop: m.message_text ? 6 : 0, fontSize: 11 }}>📎 {a.name || 'ไฟล์แนบ'}</div>
+              ) : null
+            ))
+          })()}
           {/* Fallback: ไม่มี text + ไม่มี attachment ที่ render ได้
               (เช่น sticker / reaction / ข้อความที่ FB API ไม่ส่ง content มา) */}
           {!m.message_text && !(m.attachments || []).some((a: any) => a.url) && (
