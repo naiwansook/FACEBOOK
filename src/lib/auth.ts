@@ -48,10 +48,13 @@ export const authOptions = {
           scope: 'business_management,ads_management,ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_metadata,pages_manage_posts,pages_messaging',
         },
       },
-      // 🎯 Override userinfo เพราะ default ของ next-auth v4.24.7 เรียก
-      // https://graph.facebook.com/me (ไม่มี version) ด้วย Bearer header →
-      // FB ตอบ 403 Forbidden → OAUTH_CALLBACK_ERROR
-      // แก้: ใช้ v19 endpoint + ส่ง access_token เป็น query param แทน
+      // 🎯 Override userinfo + fallback ทน rate limit
+      // 1. ลอง /v19.0/me + access_token query param (ไม่ใช้ Bearer header
+      //    เพราะ FB ตอบ 403 Forbidden กับ default ของ next-auth v4.24.7)
+      // 2. ถ้า fail (เช่น FB rate limit #4) → fallback ใช้ debug_token
+      //    ผ่าน APP_TOKEN (server-server, ไม่กิน user rate limit) เพื่อ
+      //    เอาแค่ user_id → NextAuth ก็ create session ได้ profile name
+      //    จะ fetch ทีหลังตอน user เปิด dashboard ผ่าน useSession()
       userinfo: {
         url: 'https://graph.facebook.com/v19.0/me',
         params: { fields: 'id,name,email,picture' },
@@ -61,12 +64,33 @@ export const authOptions = {
             u.searchParams.set(k, String(v))
           }
           u.searchParams.set('access_token', tokens.access_token)
-          const r = await fetch(u.toString())
-          if (!r.ok) {
+          try {
+            const r = await fetch(u.toString())
+            if (r.ok) {
+              return await r.json()
+            }
             const body = await r.text()
-            throw new Error(`FB userinfo ${r.status}: ${body.slice(0, 200)}`)
+            console.error(`[auth.userinfo] /me failed ${r.status}:`, body.slice(0, 200))
+          } catch (e: any) {
+            console.error('[auth.userinfo] /me threw:', e?.message)
           }
-          return r.json()
+          // Fallback: ใช้ debug_token (APP_TOKEN, แยก rate limit)
+          // เพื่อเอา user_id อย่างน้อยให้ session ทำงานได้
+          try {
+            const appToken = `${process.env.FACEBOOK_CLIENT_ID}|${process.env.FACEBOOK_CLIENT_SECRET}`
+            const dr = await fetch(
+              `https://graph.facebook.com/v19.0/debug_token?input_token=${tokens.access_token}&access_token=${appToken}`
+            )
+            const dj = await dr.json()
+            const userId = dj?.data?.user_id
+            if (userId) {
+              console.log('[auth.userinfo] fallback to debug_token, user_id=', userId)
+              return { id: userId, name: 'User', email: null, picture: null }
+            }
+          } catch (e: any) {
+            console.error('[auth.userinfo] debug_token fallback threw:', e?.message)
+          }
+          throw new Error('FB userinfo unavailable (rate limit?) — try again in 30 min')
         },
       },
     }),
