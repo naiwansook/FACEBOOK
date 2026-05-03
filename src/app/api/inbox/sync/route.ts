@@ -180,6 +180,37 @@ export async function POST(req: Request) {
             const fbMsgs = await listMessages(fbConv.id, page.page_access_token, 25)
             for (const m of fbMsgs) {
               const isFromPage = m.from?.id === page.page_id
+              const messageText = m.message || null
+              const attachments = (() => {
+                const list: any[] = []
+                // 1) Sticker — FB เก็บ URL ใน field "sticker" แยกจาก attachments
+                if ((m as any).sticker) {
+                  list.push({ type: 'image', url: (m as any).sticker, name: 'sticker' })
+                }
+                // 2) Shares (link ที่ลูกค้าส่งมา)
+                for (const s of ((m as any).shares?.data || []) as any[]) {
+                  if (s.link) list.push({ type: 'file', url: s.link, name: s.description || 'ลิงก์' })
+                }
+                // 3) attachments — รองรับทุก field
+                for (const a of ((m as any).attachments?.data || []) as any[]) {
+                  const url = a.image_data?.url
+                    || a.file_url
+                    || a.video_data?.url
+                    || a.audio_data?.url
+                    || a.payload?.url
+                  const isImage = a.mime_type?.startsWith('image/')
+                    || !!a.image_data
+                    || a.type === 'image'
+                  list.push({
+                    type: isImage ? 'image' : 'file',
+                    url,
+                    name: a.name || (isImage ? 'รูปภาพ' : 'ไฟล์แนบ'),
+                  })
+                }
+                return list
+              })()
+
+              // Insert ใหม่ (skip ถ้ามี — กัน duplicate)
               await sb
                 .from('inbox_messages')
                 .upsert(
@@ -188,41 +219,24 @@ export async function POST(req: Request) {
                     fb_message_id: m.id,
                     fb_sender_id: m.from?.id || 'unknown',
                     direction: isFromPage ? 'outbound' : 'inbound',
-                    message_text: m.message || null,
-                    attachments: (() => {
-                      const list: any[] = []
-                      // 1) Sticker — FB เก็บ URL ใน field "sticker" แยกจาก attachments
-                      if ((m as any).sticker) {
-                        list.push({ type: 'image', url: (m as any).sticker, name: 'sticker' })
-                      }
-                      // 2) Shares (link ที่ลูกค้าส่งมา)
-                      for (const s of ((m as any).shares?.data || []) as any[]) {
-                        if (s.link) list.push({ type: 'file', url: s.link, name: s.description || 'ลิงก์' })
-                      }
-                      // 3) attachments — รองรับทุก field
-                      for (const a of ((m as any).attachments?.data || []) as any[]) {
-                        const url = a.image_data?.url
-                          || a.file_url
-                          || a.video_data?.url
-                          || a.audio_data?.url
-                          || a.payload?.url
-                        const isImage = a.mime_type?.startsWith('image/')
-                          || !!a.image_data
-                          || a.type === 'image'
-                        list.push({
-                          type: isImage ? 'image' : 'file',
-                          url,
-                          name: a.name || (isImage ? 'รูปภาพ' : 'ไฟล์แนบ'),
-                        })
-                      }
-                      return list
-                    })(),
+                    message_text: messageText,
+                    attachments,
                     sent_by: isFromPage ? 'page_user' : 'customer',
                     delivery_status: 'delivered',
                     created_at: m.created_time,
                   },
                   { onConflict: 'fb_message_id', ignoreDuplicates: true }
                 )
+
+              // Update FB-sourced fields เสมอ (กรณี record อยู่แล้วแต่
+              // attachments/text ยังว่าง เพราะ sync ก่อนหน้านี้ยังไม่มี
+              // logic ดึง sticker / shares — จะเติมข้อมูลให้ครบ)
+              if (messageText || attachments.length > 0) {
+                await sb
+                  .from('inbox_messages')
+                  .update({ message_text: messageText, attachments })
+                  .eq('fb_message_id', m.id)
+              }
               pageResult.messages++
             }
           } catch (e: any) {
