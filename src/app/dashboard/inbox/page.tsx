@@ -823,12 +823,13 @@ export default function InboxPage() {
                         handleSend()
                       }
                     }}
-                    placeholder="พิมพ์ข้อความ... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"
+                    placeholder="พิมพ์ข้อความ..."
                     rows={1}
+                    className="ib-chat-input"
                     style={{
                       flex: 1, padding: '11px 14px', borderRadius: 12,
                       border: `1.5px solid ${BORDER}`, background: SURFACE2,
-                      fontSize: 13, fontFamily: 'inherit', resize: 'none', outline: 'none',
+                      fontSize: 16, fontFamily: 'inherit', resize: 'none', outline: 'none',
                       maxHeight: 140, color: TEXT,
                     }}
                   />
@@ -949,10 +950,10 @@ export default function InboxPage() {
         />
       )}
 
-      {/* Responsive CSS */}
+      {/* Responsive CSS — เหมือน Messenger บนมือถือ */}
       <style jsx global>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        html, body { overflow-x: hidden; }
+        html, body { overflow-x: hidden; overscroll-behavior: none; }
 
         /* Tablet — hide right panel */
         @media (max-width: 1280px) {
@@ -965,26 +966,65 @@ export default function InboxPage() {
           .ib-pagebar > div { grid-template-columns: repeat(2, 1fr) !important; }
         }
 
-        /* Mobile — page tiles 1 col */
-        @media (max-width: 600px) {
-          .ib-pagebar > div { grid-template-columns: 1fr !important; }
-        }
-
         /* Mobile — hide sidebar (use top bar instead) */
         @media (max-width: 820px) {
           .ib-sidebar { transform: translateX(-100%); transition: transform 0.25s; }
-          .ib-main { margin-left: 0 !important; padding-top: 52px; height: calc(100vh - 0px) !important; }
+          .ib-main { margin-left: 0 !important; padding-top: 0 !important; height: 100dvh !important; }
           .ib-mobile-bar { display: flex !important; }
         }
 
-        /* Small mobile — single column (toggle list ↔ chat) */
+        /* Mobile — Messenger-like UX */
         @media (max-width: 680px) {
+          /* Single column toggle */
           .ib-col1 { width: 100% !important; }
-          /* Hide col1 when chat is open */
           .ib-main[data-active="1"] .ib-col1 { display: none !important; }
-          /* Hide col2 when no chat selected */
           .ib-main[data-active="0"] .ib-col2 { display: none !important; }
           .ib-back { display: flex !important; }
+
+          /* Page bar — แนวนอน scroll (เหมือน stories) เห็นทุกเพจ */
+          .ib-pagebar { padding: 8px 10px !important; }
+          .ib-pagebar > div {
+            display: flex !important;
+            grid-template-columns: none !important;
+            overflow-x: auto !important;
+            scroll-snap-type: x mandatory;
+            gap: 6px !important;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+          }
+          .ib-pagebar > div::-webkit-scrollbar { display: none; }
+          .ib-pagebar > div > button {
+            scroll-snap-align: start;
+            flex-shrink: 0 !important;
+            max-width: 200px;
+          }
+
+          /* ซ่อน page bar + mobile bar เมื่อเปิดแชท → เห็นแชทเต็มจอ */
+          .ib-main[data-active="1"] .ib-pagebar { display: none !important; }
+          .ib-main[data-active="1"] .ib-mobile-bar { display: none !important; }
+
+          /* Mobile back button — แสดงในหัว chat เพื่อกลับ list */
+          .ib-back {
+            min-width: 38px !important; min-height: 38px !important;
+            padding: 8px !important;
+          }
+
+          /* Touch targets ใหญ่ขึ้น */
+          .ib-col1 button, .ib-col1 a { min-height: 36px; }
+        }
+
+        /* iOS safe area — กัน input ทับ home bar */
+        @supports (padding: env(safe-area-inset-bottom)) {
+          @media (max-width: 680px) {
+            .ib-main { padding-bottom: env(safe-area-inset-bottom) !important; }
+          }
+        }
+
+        /* iOS zoom prevention — input fontSize ≥ 16 */
+        @media (max-width: 680px) {
+          input[type="text"], input[type="search"], textarea, select {
+            font-size: 16px !important;
+          }
         }
       `}</style>
     </div>
