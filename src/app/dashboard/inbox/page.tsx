@@ -92,7 +92,7 @@ export default function InboxPage() {
 
   // Filters
   const [pageFilter, setPageFilter] = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<'all'|'unread'|'starred'|'unresolved'|'archived'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all'|'unread'|'needs_reply'|'starred'|'unresolved'|'archived'>('all')
   const [search, setSearch] = useState('')
 
   // UI state
@@ -107,6 +107,7 @@ export default function InboxPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showRightPanel, setShowRightPanel] = useState(true)
   const [totalUnread, setTotalUnread] = useState(0)
+  const [totalNeedsReply, setTotalNeedsReply] = useState(0)
   const [unreadByPage, setUnreadByPage] = useState<Record<string, number>>({})
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
@@ -125,6 +126,7 @@ export default function InboxPage() {
     setConversations(res.conversations || [])
     setPages(res.pages || [])
     setTotalUnread(res.totalUnread || 0)
+    setTotalNeedsReply(res.totalNeedsReply || 0)
     setUnreadByPage(res.unreadByPage || {})
     setLoadingList(false)
   }
@@ -563,7 +565,7 @@ export default function InboxPage() {
               {([
                 ['all', 'ทั้งหมด', null, null],
                 ['unread', 'ใหม่', null, totalUnread > 0 ? totalUnread : null],
-                ['unresolved', 'ค้าง', null, null],
+                ['needs_reply', 'ยังไม่ตอบ', null, totalNeedsReply > 0 ? totalNeedsReply : null],
                 ['starred', null, Star, null],
                 ['archived', null, Archive, null],
               ] as const).map(([key, label, Icon, count]) => {

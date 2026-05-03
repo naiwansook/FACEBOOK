@@ -50,6 +50,7 @@ export async function GET(req: Request) {
     else if (filter === 'archived') query = query.eq('is_archived', true)
     else if (filter === 'starred') query = query.eq('is_starred', true).eq('is_archived', false)
     else if (filter === 'unresolved') query = query.eq('is_resolved', false).eq('is_archived', false)
+    else if (filter === 'needs_reply') query = query.eq('last_sender', 'customer').eq('is_archived', false)
     else query = query.eq('is_archived', false)  // default = active
 
     if (q) {
@@ -71,6 +72,14 @@ export async function GET(req: Request) {
       .gt('unread_count', 0)
       .eq('is_archived', false)
 
+    // นับ needs_reply (last_sender = customer = แอดมินยังไม่ตอบ)
+    const { count: totalNeedsReply } = await sb
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('last_sender', 'customer')
+      .eq('is_archived', false)
+
     // นับ unread ต่อเพจ (สำหรับ badge บนแต่ละ page tile)
     const { data: unreadRows } = await sb
       .from('conversations')
@@ -87,6 +96,7 @@ export async function GET(req: Request) {
       conversations: conversations || [],
       pages: pages || [],
       totalUnread: totalUnread || 0,
+      totalNeedsReply: totalNeedsReply || 0,
       unreadByPage,
     })
   } catch (err: any) {
