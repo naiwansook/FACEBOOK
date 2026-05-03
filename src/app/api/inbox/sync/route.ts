@@ -118,9 +118,10 @@ export async function POST(req: Request) {
       pageResult.webhook_subscribed = sub.success
       if (!sub.success && sub.error) pageResult.errors.push(`Subscribe: ${sub.error}`)
 
-      // Fetch conversations
+      // Fetch conversations (with pagination — รองรับเพจที่มีลูกค้าเยอะ)
       try {
-        const fbConvs = await listConversations(page.page_id, page.page_access_token, 50)
+        const fbConvs = await listConversations(page.page_id, page.page_access_token, 50, 5)
+        console.log(`[sync] ${page.page_name}: fetched ${fbConvs.length} conversations from FB`)
 
         for (const fbConv of fbConvs) {
           // หา PSID ลูกค้า (participant ที่ไม่ใช่ page)

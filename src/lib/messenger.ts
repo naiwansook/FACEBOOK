@@ -144,15 +144,23 @@ export interface FBConversation {
 export async function listConversations(
   pageId: string,
   pageToken: string,
-  limit = 50
+  limit = 50,
+  maxPages = 5,  // ดึงสูงสุด 5 หน้า × 50 = 250 conversations ต่อ FB page
 ): Promise<FBConversation[]> {
   const fields = 'id,updated_time,unread_count,snippet,participants'
-  const res = await fetch(
+  const all: FBConversation[] = []
+  let url: string | undefined =
     `${FB_API}/${pageId}/conversations?fields=${fields}&limit=${limit}&access_token=${pageToken}`
-  )
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.data || []
+  let pages = 0
+  while (url && pages < maxPages) {
+    const res: Response = await fetch(url)
+    const data: any = await res.json()
+    if (data.error) throw new Error(data.error.message)
+    all.push(...((data.data || []) as FBConversation[]))
+    url = data.paging?.next
+    pages++
+  }
+  return all
 }
 
 export interface FBMessage {
@@ -168,15 +176,23 @@ export interface FBMessage {
 export async function listMessages(
   conversationId: string,
   pageToken: string,
-  limit = 50
+  limit = 50,
+  maxPages = 4,  // ดึงสูงสุด 4 หน้า × 50 = 200 messages ต่อ conversation
 ): Promise<FBMessage[]> {
   const fields = 'id,created_time,from,to,message,attachments'
-  const res = await fetch(
+  const all: FBMessage[] = []
+  let url: string | undefined =
     `${FB_API}/${conversationId}/messages?fields=${fields}&limit=${limit}&access_token=${pageToken}`
-  )
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.data || []
+  let pages = 0
+  while (url && pages < maxPages) {
+    const res: Response = await fetch(url)
+    const data: any = await res.json()
+    if (data.error) throw new Error(data.error.message)
+    all.push(...((data.data || []) as FBMessage[]))
+    url = data.paging?.next
+    pages++
+  }
+  return all
 }
 
 /** ดึงข้อมูล user (ลูกค้า) จาก PSID — ได้ name + profile pic */
