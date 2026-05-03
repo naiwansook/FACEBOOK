@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
 import { getRealStatus } from '@/lib/facebook'
+import { getFbUserIdFromToken } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,18 +24,16 @@ export async function GET() {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
 
-    const meRes = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id&access_token=${userToken}`
-    )
-    const meData = await meRes.json()
-    if (meData.error || !meData.id) {
+    // ใช้ helper ที่มี fallback ไป debug_token (กัน rate limit บน /me)
+    const fbId = await getFbUserIdFromToken(userToken)
+    if (!fbId) {
       return NextResponse.json({ campaigns: [], summary: null, reason: 'fb_token_expired' })
     }
 
     const { data: user } = await supabase
       .from('users')
       .select('id')
-      .eq('facebook_id', meData.id)
+      .eq('facebook_id', fbId)
       .single()
 
     if (!user) {
