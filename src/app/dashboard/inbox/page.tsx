@@ -1142,14 +1142,21 @@ function MessageBubble({ message: m, customerName, customerPic }: { message: any
           borderTopRightRadius: out ? 4 : 16,
           borderTopLeftRadius: out ? 16 : 4,
         }}>
-          {m.message_text || (m.attachments?.length ? '📎 ไฟล์แนบ' : '')}
+          {m.message_text}
           {(m.attachments || []).map((a: any, i: number) => (
             a.type === 'image' && a.url ? (
-              <img key={i} src={a.url} style={{ maxWidth: 200, marginTop: 6, borderRadius: 8, display: 'block' }} alt="" />
-            ) : (
-              <div key={i} style={{ marginTop: 6, fontSize: 11 }}>📎 {a.name || a.url}</div>
-            )
+              <img key={i} src={a.url} style={{ maxWidth: 200, marginTop: m.message_text ? 6 : 0, borderRadius: 8, display: 'block' }} alt="" />
+            ) : a.url ? (
+              <div key={i} style={{ marginTop: m.message_text ? 6 : 0, fontSize: 11 }}>📎 {a.name || 'ไฟล์แนบ'}</div>
+            ) : null
           ))}
+          {/* Fallback: ไม่มี text + ไม่มี attachment ที่ render ได้
+              (เช่น sticker / reaction / ข้อความที่ FB API ไม่ส่ง content มา) */}
+          {!m.message_text && !(m.attachments || []).some((a: any) => a.url) && (
+            <span style={{ fontSize: 12, fontStyle: 'italic', opacity: 0.85 }}>
+              💬 ข้อความ (ภาพ/สติกเกอร์/ไม่มี content)
+            </span>
+          )}
         </div>
         <div style={{ fontSize: 10, color: MUTED, padding: '0 4px' }}>
           {sending && '⏳ กำลังส่ง...'}

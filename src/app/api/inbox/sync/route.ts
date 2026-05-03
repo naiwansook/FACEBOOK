@@ -189,11 +189,22 @@ export async function POST(req: Request) {
                     fb_sender_id: m.from?.id || 'unknown',
                     direction: isFromPage ? 'outbound' : 'inbound',
                     message_text: m.message || null,
-                    attachments: (m.attachments?.data || []).map(a => ({
-                      type: a.mime_type?.startsWith('image/') ? 'image' : 'file',
-                      url: a.image_data?.url || a.file_url,
-                      name: a.name,
-                    })),
+                    attachments: (m.attachments?.data || []).map((a: any) => {
+                      // FB attachments มีหลาย field เก็บ URL — ลองทุกที่
+                      const url = a.image_data?.url
+                        || a.file_url
+                        || a.video_data?.url
+                        || a.audio_data?.url
+                        || a.payload?.url
+                      const isImage = a.mime_type?.startsWith('image/')
+                        || !!a.image_data
+                        || a.type === 'image'
+                      return {
+                        type: isImage ? 'image' : 'file',
+                        url,
+                        name: a.name || (isImage ? 'รูปภาพ' : 'ไฟล์แนบ'),
+                      }
+                    }),
                     sent_by: isFromPage ? 'page_user' : 'customer',
                     delivery_status: 'delivered',
                     created_at: m.created_time,
