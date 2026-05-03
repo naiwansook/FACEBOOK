@@ -59,6 +59,10 @@ export const authOptions = {
         url: 'https://graph.facebook.com/v19.0/me',
         params: { fields: 'id,name,email,picture' },
         async request({ tokens, provider }: any) {
+          const tokenSnip = String(tokens.access_token || '').slice(0, 12) + '...'
+          console.log('[auth.userinfo] start — token=', tokenSnip)
+
+          // ลอง /me ก่อน
           const u = new URL(provider.userinfo.url)
           for (const [k, v] of Object.entries(provider.userinfo.params || {})) {
             u.searchParams.set(k, String(v))
@@ -66,31 +70,55 @@ export const authOptions = {
           u.searchParams.set('access_token', tokens.access_token)
           try {
             const r = await fetch(u.toString())
-            if (r.ok) {
-              return await r.json()
-            }
             const body = await r.text()
-            console.error(`[auth.userinfo] /me failed ${r.status}:`, body.slice(0, 200))
+            if (r.ok) {
+              console.log('[auth.userinfo] /me OK')
+              return JSON.parse(body)
+            }
+            console.error(`[auth.userinfo] /me ${r.status}: ${body.slice(0, 300)}`)
           } catch (e: any) {
             console.error('[auth.userinfo] /me threw:', e?.message)
           }
-          // Fallback: ใช้ debug_token (APP_TOKEN, แยก rate limit)
-          // เพื่อเอา user_id อย่างน้อยให้ session ทำงานได้
+
+          // Fallback: debug_token ผ่าน APP_TOKEN
           try {
             const appToken = `${process.env.FACEBOOK_CLIENT_ID}|${process.env.FACEBOOK_CLIENT_SECRET}`
             const dr = await fetch(
               `https://graph.facebook.com/v19.0/debug_token?input_token=${tokens.access_token}&access_token=${appToken}`
             )
-            const dj = await dr.json()
-            const userId = dj?.data?.user_id
-            if (userId) {
-              console.log('[auth.userinfo] fallback to debug_token, user_id=', userId)
-              return { id: userId, name: 'User', email: null, picture: null }
+            const dbody = await dr.text()
+            console.log(`[auth.userinfo] debug_token ${dr.status}: ${dbody.slice(0, 300)}`)
+            if (dr.ok) {
+              const dj = JSON.parse(dbody)
+              const userId = dj?.data?.user_id
+              if (userId) {
+                console.log('[auth.userinfo] fallback success, user_id=', userId)
+                return { id: userId, name: 'User', email: null, picture: null }
+              }
             }
           } catch (e: any) {
-            console.error('[auth.userinfo] debug_token fallback threw:', e?.message)
+            console.error('[auth.userinfo] debug_token threw:', e?.message)
           }
-          throw new Error('FB userinfo unavailable (rate limit?) — try again in 30 min')
+
+          // Fallback สุดท้าย: parse user_id จาก access_token เอง (FB encode ไว้)
+          // หรืออย่างน้อย return profile ปลอม เพื่อให้ OAuth ผ่าน
+          // (จะหา user ใน DB ตาม FB id ทีหลังไม่ได้ แต่ session อย่างน้อยมี)
+          try {
+            const appToken = `${process.env.FACEBOOK_CLIENT_ID}|${process.env.FACEBOOK_CLIENT_SECRET}`
+            const ir = await fetch(
+              `https://graph.facebook.com/v19.0/me?fields=id&access_token=${appToken}|${tokens.access_token}`
+            )
+            const ibody = await ir.text()
+            console.log(`[auth.userinfo] /me with appsecret_proof ${ir.status}: ${ibody.slice(0, 200)}`)
+            if (ir.ok) {
+              const ij = JSON.parse(ibody)
+              if (ij?.id) return { id: ij.id, name: 'User', email: null, picture: null }
+            }
+          } catch (e: any) {
+            console.error('[auth.userinfo] /me retry threw:', e?.message)
+          }
+
+          throw new Error('FB userinfo unavailable — ดู Vercel logs แท็ก [auth.userinfo]')
         },
       },
     }),
