@@ -169,6 +169,8 @@ export interface FBMessage {
   from: { id: string; name?: string; email?: string }
   to?: { data: Array<{ id: string; name?: string }> }
   message?: string
+  sticker?: string                         // URL ของ sticker (ถ้าข้อความเป็น sticker)
+  shares?: { data: Array<{ link?: string; description?: string }> }
   attachments?: { data: Array<{ id: string; mime_type?: string; name?: string; image_data?: any; file_url?: string }> }
 }
 
@@ -179,7 +181,8 @@ export async function listMessages(
   limit = 50,
   maxPages = 4,  // ดึงสูงสุด 4 หน้า × 50 = 200 messages ต่อ conversation
 ): Promise<FBMessage[]> {
-  const fields = 'id,created_time,from,to,message,attachments'
+  // เพิ่ม sticker — FB เก็บ URL ของ sticker ใน field นี้แยกจาก attachments
+  const fields = 'id,created_time,from,to,message,sticker,shares,attachments'
   const all: FBMessage[] = []
   let url: string | undefined =
     `${FB_API}/${conversationId}/messages?fields=${fields}&limit=${limit}&access_token=${pageToken}`

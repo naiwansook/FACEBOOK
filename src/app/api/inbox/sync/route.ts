@@ -189,22 +189,34 @@ export async function POST(req: Request) {
                     fb_sender_id: m.from?.id || 'unknown',
                     direction: isFromPage ? 'outbound' : 'inbound',
                     message_text: m.message || null,
-                    attachments: (m.attachments?.data || []).map((a: any) => {
-                      // FB attachments มีหลาย field เก็บ URL — ลองทุกที่
-                      const url = a.image_data?.url
-                        || a.file_url
-                        || a.video_data?.url
-                        || a.audio_data?.url
-                        || a.payload?.url
-                      const isImage = a.mime_type?.startsWith('image/')
-                        || !!a.image_data
-                        || a.type === 'image'
-                      return {
-                        type: isImage ? 'image' : 'file',
-                        url,
-                        name: a.name || (isImage ? 'รูปภาพ' : 'ไฟล์แนบ'),
+                    attachments: (() => {
+                      const list: any[] = []
+                      // 1) Sticker — FB เก็บ URL ใน field "sticker" แยกจาก attachments
+                      if ((m as any).sticker) {
+                        list.push({ type: 'image', url: (m as any).sticker, name: 'sticker' })
                       }
-                    }),
+                      // 2) Shares (link ที่ลูกค้าส่งมา)
+                      for (const s of ((m as any).shares?.data || []) as any[]) {
+                        if (s.link) list.push({ type: 'file', url: s.link, name: s.description || 'ลิงก์' })
+                      }
+                      // 3) attachments — รองรับทุก field
+                      for (const a of ((m as any).attachments?.data || []) as any[]) {
+                        const url = a.image_data?.url
+                          || a.file_url
+                          || a.video_data?.url
+                          || a.audio_data?.url
+                          || a.payload?.url
+                        const isImage = a.mime_type?.startsWith('image/')
+                          || !!a.image_data
+                          || a.type === 'image'
+                        list.push({
+                          type: isImage ? 'image' : 'file',
+                          url,
+                          name: a.name || (isImage ? 'รูปภาพ' : 'ไฟล์แนบ'),
+                        })
+                      }
+                      return list
+                    })(),
                     sent_by: isFromPage ? 'page_user' : 'customer',
                     delivery_status: 'delivered',
                     created_at: m.created_time,
