@@ -72,13 +72,14 @@ export async function GET(req: Request) {
   )
   const fbData = await r.json()
 
-  // ดึง local DB rows เปรียบเทียบ
-  const { data: localMsgs } = await sb
+  // ดึง local DB rows เปรียบเทียบ — ใช้ conv.id ไม่ใช่ convId param
+  const { data: localMsgs, error: localErr } = await sb
     .from('inbox_messages')
     .select('id, fb_message_id, message_text, attachments, direction, created_at, delivery_status, error_message')
-    .eq('conversation_id', convId)
+    .eq('conversation_id', conv.id)
     .order('created_at', { ascending: false })
     .limit(10)
+  if (localErr) console.error('[debug/messages] local query error:', localErr)
 
   return NextResponse.json({
     conv: { customer_name: conv.customer_name, fb_conversation_id: conv.fb_conversation_id },
