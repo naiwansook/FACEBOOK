@@ -107,6 +107,7 @@ export default function InboxPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showRightPanel, setShowRightPanel] = useState(true)
   const [totalUnread, setTotalUnread] = useState(0)
+  const [unreadByPage, setUnreadByPage] = useState<Record<string, number>>({})
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -124,6 +125,7 @@ export default function InboxPage() {
     setConversations(res.conversations || [])
     setPages(res.pages || [])
     setTotalUnread(res.totalUnread || 0)
+    setUnreadByPage(res.unreadByPage || {})
     setLoadingList(false)
   }
 
@@ -390,7 +392,91 @@ export default function InboxPage() {
       </div>
 
       {/* Main 3-column layout */}
-      <main data-active={activeConv ? '1' : '0'} style={{ marginLeft: 244, height: '100vh', display: 'flex', position: 'relative', zIndex: 1, overflow: 'hidden' }} className="ib-main">
+      <main data-active={activeConv ? '1' : '0'} style={{ marginLeft: 244, height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1, overflow: 'hidden' }} className="ib-main">
+        {/* Page tiles top bar — 3 ต่อแถว มีตัวเลข unread สีแดง */}
+        {pages.length > 0 && (
+          <div style={{
+            background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(20px)',
+            borderBottom: `1.5px solid ${BORDER}`, padding: '12px 16px',
+            flexShrink: 0,
+          }} className="ib-pagebar">
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+              maxWidth: 980,
+            }}>
+              {/* "ทุกเพจ" tile */}
+              <button
+                onClick={() => setPageFilter('')}
+                style={{
+                  position: 'relative', padding: '10px 12px', borderRadius: 11,
+                  border: `1.5px solid ${pageFilter === '' ? PRIMARY : BORDER}`,
+                  background: pageFilter === '' ? 'linear-gradient(135deg, #4338ca, #6366f1)' : 'white',
+                  color: pageFilter === '' ? 'white' : TEXT,
+                  fontSize: 12, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                  transition: 'all 0.15s',
+                  boxShadow: pageFilter === '' ? '0 4px 14px rgba(67,56,202,0.3)' : SHADOW_SM,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>📂</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  ทุกเพจ ({pages.length})
+                </span>
+                {totalUnread > 0 && (
+                  <span style={{
+                    background: pageFilter === '' ? 'rgba(255,255,255,0.25)' : RED,
+                    color: 'white', fontSize: 10, fontWeight: 800,
+                    padding: '2px 7px', borderRadius: 999, minWidth: 20, textAlign: 'center',
+                    flexShrink: 0,
+                  }}>{totalUnread > 99 ? '99+' : totalUnread}</span>
+                )}
+              </button>
+
+              {/* แต่ละเพจ — สีประจำเพจ + unread badge */}
+              {pages.map(p => {
+                const pc = pageColor(p.id)
+                const active = pageFilter === p.id
+                const unread = unreadByPage[p.id] || 0
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setPageFilter(p.id)}
+                    title={p.page_name}
+                    style={{
+                      position: 'relative', padding: '10px 12px', borderRadius: 11,
+                      border: `1.5px solid ${active ? pc.border : BORDER}`,
+                      background: active ? pc.avatar : 'white',
+                      color: active ? 'white' : TEXT,
+                      fontSize: 12, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                      transition: 'all 0.15s',
+                      boxShadow: active ? `0 4px 14px ${pc.border}55` : SHADOW_SM,
+                    }}
+                  >
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: active ? 'white' : pc.border, flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.page_name}
+                    </span>
+                    {unread > 0 && (
+                      <span style={{
+                        background: active ? 'rgba(255,255,255,0.3)' : RED,
+                        color: 'white', fontSize: 10, fontWeight: 800,
+                        padding: '2px 7px', borderRadius: 999, minWidth: 20, textAlign: 'center',
+                        flexShrink: 0,
+                      }}>{unread > 99 ? '99+' : unread}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 3-column body */}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Column 1: Conversation List */}
         <section style={{
           width: 340, flexShrink: 0, background: SURFACE,
@@ -435,22 +521,6 @@ export default function InboxPage() {
                 }}
               />
             </div>
-
-            {/* Page filter */}
-            {pages.length > 0 && (
-              <select
-                value={pageFilter}
-                onChange={e => setPageFilter(e.target.value)}
-                style={{
-                  width: '100%', padding: '8px 10px', borderRadius: 10,
-                  border: `1.5px solid ${BORDER}`, background: 'white',
-                  fontSize: 12, fontFamily: 'inherit', fontWeight: 700, color: TEXT, marginBottom: 10,
-                }}
-              >
-                <option value="">📂 ทุกเพจ ({pages.length})</option>
-                {pages.map(p => <option key={p.id} value={p.id}>📄 {p.page_name}</option>)}
-              </select>
-            )}
 
             {/* Status filter — high-contrast segmented control (active = filled purple) */}
             <div style={{
@@ -835,6 +905,7 @@ export default function InboxPage() {
             </div>
           </aside>
         )}
+        </div>
       </main>
 
       {/* Settings modal */}
@@ -856,9 +927,15 @@ export default function InboxPage() {
           .ib-col3 { display: none !important; }
         }
 
-        /* Narrow tablet — narrower col1 */
+        /* Narrow tablet — narrower col1 + page tiles 2 cols */
         @media (max-width: 980px) {
           .ib-col1 { width: 290px !important; }
+          .ib-pagebar > div { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+
+        /* Mobile — page tiles 1 col */
+        @media (max-width: 600px) {
+          .ib-pagebar > div { grid-template-columns: 1fr !important; }
         }
 
         /* Mobile — hide sidebar (use top bar instead) */

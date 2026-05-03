@@ -71,10 +71,23 @@ export async function GET(req: Request) {
       .gt('unread_count', 0)
       .eq('is_archived', false)
 
+    // นับ unread ต่อเพจ (สำหรับ badge บนแต่ละ page tile)
+    const { data: unreadRows } = await sb
+      .from('conversations')
+      .select('page_id, unread_count')
+      .eq('user_id', userId)
+      .gt('unread_count', 0)
+      .eq('is_archived', false)
+    const unreadByPage: Record<string, number> = {}
+    for (const r of (unreadRows || []) as Array<{ page_id: string; unread_count: number }>) {
+      unreadByPage[r.page_id] = (unreadByPage[r.page_id] || 0) + (r.unread_count || 0)
+    }
+
     return NextResponse.json({
       conversations: conversations || [],
       pages: pages || [],
       totalUnread: totalUnread || 0,
+      unreadByPage,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message, conversations: [], pages: [] }, { status: 500 })
