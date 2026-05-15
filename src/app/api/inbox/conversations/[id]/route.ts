@@ -3,7 +3,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext } from '@/lib/team'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,8 +13,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const sb = supabaseAdmin()
 
@@ -24,10 +25,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         connected_pages!inner(id, page_id, page_name, page_picture)
       `)
       .eq('id', params.id)
-      .eq('user_id', userId)
       .single()
 
     if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!ctx.accessiblePageIds.has(conversation.page_id)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const { data: messages } = await sb
       .from('inbox_messages')
@@ -54,8 +57,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const sb = supabaseAdmin()
+
+    // ensure access
+    const { data: conv } = await sb
+      .from('conversations')
+      .select('id, page_id')
+      .eq('id', params.id)
+      .single()
+    if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!ctx.accessiblePageIds.has(conv.page_id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const body = await req.json()
     const allowed: Record<string, any> = {}
@@ -63,12 +79,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (k in body) allowed[k] = body[k]
     }
 
-    const sb = supabaseAdmin()
     const { error } = await sb
       .from('conversations')
       .update(allowed)
       .eq('id', params.id)
-      .eq('user_id', userId)
 
     if (error) throw error
     return NextResponse.json({ success: true })
