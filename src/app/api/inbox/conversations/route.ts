@@ -3,7 +3,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext } from '@/lib/team'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +15,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ conversations: [], pages: [] })
     }
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ conversations: [], pages: [] })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ conversations: [], pages: [] })
+
+    const accessible = Array.from(ctx.accessiblePageIds)
+    if (accessible.length === 0) {
+      return NextResponse.json({ conversations: [], pages: [], totalUnread: 0, totalNeedsReply: 0, unreadByPage: {} })
+    }
 
     const { searchParams } = new URL(req.url)
     const pageId = searchParams.get('pageId') || ''
@@ -23,13 +29,18 @@ export async function GET(req: Request) {
     const q = (searchParams.get('q') || '').trim()
     const limit = Math.min(Number(searchParams.get('limit') || 50), 200)
 
+    // ถ้า client filter ด้วย pageId ต้องเป็นเพจที่เข้าถึงได้
+    if (pageId && !ctx.accessiblePageIds.has(pageId)) {
+      return NextResponse.json({ conversations: [], pages: [], totalUnread: 0, totalNeedsReply: 0, unreadByPage: {} })
+    }
+
     const sb = supabaseAdmin()
 
-    // ดึง pages ของ user (เพื่อ filter dropdown)
+    // ดึง pages ที่ user เข้าถึงได้ (สำหรับ filter dropdown)
     const { data: pages } = await sb
       .from('connected_pages')
       .select('id, page_id, page_name, page_picture')
-      .eq('user_id', userId)
+      .in('id', accessible)
       .eq('is_active', true)
 
     let query = sb
@@ -41,7 +52,7 @@ export async function GET(req: Request) {
         page_id,
         connected_pages!inner(id, page_name, page_picture)
       `)
-      .eq('user_id', userId)
+      .in('page_id', accessible)
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .limit(limit)
 
@@ -68,23 +79,23 @@ export async function GET(req: Request) {
     const { count: totalUnread } = await sb
       .from('conversations')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
+      .in('page_id', accessible)
       .gt('unread_count', 0)
       .eq('is_archived', false)
 
-    // นับ needs_reply (last_sender = customer = แอดมินยังไม่ตอบ)
+    // นับ needs_reply
     const { count: totalNeedsReply } = await sb
       .from('conversations')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
+      .in('page_id', accessible)
       .eq('last_sender', 'customer')
       .eq('is_archived', false)
 
-    // นับ unread ต่อเพจ (สำหรับ badge บนแต่ละ page tile)
+    // นับ unread ต่อเพจ
     const { data: unreadRows } = await sb
       .from('conversations')
       .select('page_id, unread_count')
-      .eq('user_id', userId)
+      .in('page_id', accessible)
       .gt('unread_count', 0)
       .eq('is_archived', false)
     const unreadByPage: Record<string, number> = {}

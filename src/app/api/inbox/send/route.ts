@@ -3,7 +3,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext } from '@/lib/team'
 import { sendTextMessage, sendSenderAction } from '@/lib/messenger'
 
 export const dynamic = 'force-dynamic'
@@ -15,8 +16,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { conversationId, text } = await req.json()
     if (!conversationId || !text || typeof text !== 'string' || !text.trim()) {
@@ -25,15 +26,17 @@ export async function POST(req: Request) {
 
     const sb = supabaseAdmin()
 
-    // หา conversation + page token
+    // หา conversation + ตรวจสิทธิ์เพจ
     const { data: conv } = await sb
       .from('conversations')
       .select('id, fb_psid, page_id, fb_page_id')
       .eq('id', conversationId)
-      .eq('user_id', userId)
       .single()
 
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (!ctx.accessiblePageIds.has(conv.page_id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const { data: page } = await sb
       .from('connected_pages')
@@ -49,8 +52,6 @@ export async function POST(req: Request) {
     sendSenderAction(page.page_access_token, conv.fb_psid, 'typing_on').catch(() => {})
 
     // ส่งข้อความ — RESPONSE (ภายใน 24 ชม. ของ last message ลูกค้า)
-    // หมายเหตุ: ไม่ใช้ HUMAN_AGENT tag retry เพราะต้องผ่าน FB App Review
-    // (error #100 — ใช้ tag นี้ไม่ได้จนกว่าจะได้รับอนุมัติ)
     const result = await sendTextMessage(
       page.page_access_token,
       conv.fb_psid,
@@ -73,14 +74,14 @@ export async function POST(req: Request) {
         direction: 'outbound',
         message_text: text.trim(),
         sent_by: 'page_user',
-        sent_by_user_id: userId,
+        sent_by_user_id: ctx.userId,
         delivery_status: 'failed',
         error_message: userError,
       })
       return NextResponse.json({ error: userError }, { status: 500 })
     }
 
-    // บันทึก message สำเร็จ
+    // บันทึก message สำเร็จ — sent_by_user_id = agent's id (audit trail)
     const { data: saved } = await sb
       .from('inbox_messages')
       .insert({
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
         direction: 'outbound',
         message_text: text.trim(),
         sent_by: 'page_user',
-        sent_by_user_id: userId,
+        sent_by_user_id: ctx.userId,
         delivery_status: 'sent',
       })
       .select('*')
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
         last_message_at: new Date().toISOString(),
         last_sender: 'page',
         unread_count: 0,
-        is_resolved: false,  // มี reply ใหม่ → unresolve
+        is_resolved: false,
       })
       .eq('id', conv.id)
 

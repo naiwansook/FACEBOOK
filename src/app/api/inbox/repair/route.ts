@@ -4,7 +4,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext, assertOwner } from '@/lib/team'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,8 +22,11 @@ export async function POST(req: Request) {
   if (!session?.accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const og = assertOwner(ctx)
+  if (!og.ok) return NextResponse.json({ error: og.error }, { status: og.status })
 
   // รับ pageId จาก body (POST) หรือ query (GET)
   const url = new URL(req.url)
@@ -30,12 +34,16 @@ export async function POST(req: Request) {
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
   const onlyPageId: string | undefined = body.pageId || queryPageId
 
+  if (onlyPageId && !ctx.ownedPageIds.has(onlyPageId)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const sb = supabaseAdmin()
 
   // 1) หา empty messages — null text + empty attachments
   let q = sb
     .from('inbox_messages')
-    .select('id, fb_message_id, conversation_id, conversations!inner(page_id, user_id)')
+    .select('id, fb_message_id, conversation_id, conversations!inner(page_id)')
     .is('message_text', null)
     .or('attachments.is.null,attachments.eq.[]')
     .not('fb_message_id', 'is', null)
@@ -43,10 +51,11 @@ export async function POST(req: Request) {
   const { data: emptyMsgs, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // กรอง: เฉพาะ user นี้ + (optional) เฉพาะเพจ
+  // กรอง: เฉพาะเพจที่ user เป็น owner + (optional) เฉพาะเพจ
   const filtered = (emptyMsgs || []).filter((m: any) => {
-    if (m.conversations?.user_id !== userId) return false
-    if (onlyPageId && m.conversations?.page_id !== onlyPageId) return false
+    const pid = m.conversations?.page_id
+    if (!pid || !ctx.ownedPageIds.has(pid)) return false
+    if (onlyPageId && pid !== onlyPageId) return false
     return true
   })
 

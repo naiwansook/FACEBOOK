@@ -5,7 +5,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext, assertOwner } from '@/lib/team'
 import {
   listConversations,
   listMessages,
@@ -52,22 +53,33 @@ export async function POST(req: Request) {
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const og = assertOwner(ctx)
+    if (!og.ok) return NextResponse.json({ error: og.error }, { status: og.status })
+
+    const userId = ctx.userId
 
     const body = await req.json().catch(() => ({}))
     const onlyPageId: string | undefined = body.pageId
 
     const sb = supabaseAdmin()
 
-    // ดึง pages ที่จะ sync
+    // sync เฉพาะเพจที่ user เป็น owner
+    const ownedIds = Array.from(ctx.ownedPageIds)
     let pageQuery = sb
       .from('connected_pages')
       .select('id, page_id, page_name, page_access_token, page_picture')
-      .eq('user_id', userId)
+      .in('id', ownedIds)
       .eq('is_active', true)
 
-    if (onlyPageId) pageQuery = pageQuery.eq('id', onlyPageId)
+    if (onlyPageId) {
+      if (!ctx.ownedPageIds.has(onlyPageId)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      pageQuery = pageQuery.eq('id', onlyPageId)
+    }
 
     const { data: pages } = await pageQuery
     if (!pages || pages.length === 0) {

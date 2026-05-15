@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
-import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles, Download, MessageSquare } from 'lucide-react'
+import { Bell, Plus, ChevronRight, TrendingUp, Activity, Target, LogOut, X, ArrowLeft, Zap, DollarSign, Eye, MousePointer, Users, BarChart3, Percent, Power, Trash2, RefreshCw, Trophy, Pause, CheckCircle, Sparkles, Download, MessageSquare, UserPlus } from 'lucide-react'
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BG = '#eef2ff', SURFACE = '#ffffff', SURFACE2 = '#f5f7ff'
@@ -89,6 +89,7 @@ export default function Dashboard() {
   const [abTests, setAbTests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [dataReason, setDataReason] = useState<string | null>(null)
+  const [isOwner, setIsOwner] = useState(true)  // default true → ไม่ flicker UI
   const notifRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -102,12 +103,13 @@ export default function Dashboard() {
 
   async function loadAll() {
     setLoading(true)
-    const [pagesRes, campaignsRes, notifsRes, abTestsRes, inboxRes] = await Promise.all([
+    const [pagesRes, campaignsRes, notifsRes, abTestsRes, inboxRes, meRes] = await Promise.all([
       fetch('/api/pages').then(r => r.json()),
       fetch('/api/ads').then(r => r.json()),
       fetch('/api/notifications').then(r => r.json()),
       fetch('/api/ads/ab-tests').then(r => r.json()).catch(() => ({ tests: [] })),
       fetch('/api/inbox/conversations?filter=unread&limit=1').then(r => r.json()).catch(() => ({ totalUnread: 0 })),
+      fetch('/api/me').then(r => r.json()).catch(() => ({ role: { isOwner: true } })),
     ])
     setPages(pagesRes.pages || [])
     setCampaigns(campaignsRes.campaigns || [])
@@ -117,6 +119,7 @@ export default function Dashboard() {
     setUnreadCount(notifsRes.unreadCount || 0)
     setAbTests(abTestsRes.tests || [])
     setInboxUnread(inboxRes.totalUnread || 0)
+    setIsOwner(meRes?.role?.isOwner ?? true)
     setLoading(false)
   }
 
@@ -289,6 +292,11 @@ export default function Dashboard() {
         <Link href="/dashboard/inbox" style={{ textDecoration: 'none' }}>
           <NavItem icon={<MessageSquare size={15} />} label="กล่องข้อความ" badge={inboxUnread > 0 ? inboxUnread : undefined} />
         </Link>
+        {isOwner && (
+          <Link href="/dashboard/team" style={{ textDecoration: 'none' }}>
+            <NavItem icon={<UserPlus size={15} />} label="จัดการทีม" />
+          </Link>
+        )}
         <div style={{ position: 'relative' }} ref={notifRef}>
           <NavItem
             icon={<Bell size={15} />}

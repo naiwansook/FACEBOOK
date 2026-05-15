@@ -1,9 +1,10 @@
-// GET /api/inbox/settings?pageId=<id>   → ดึงทุก setting ของ user (รวม pages)
-// PUT  /api/inbox/settings              → upsert
+// GET /api/inbox/settings?pageId=<id>   → ดึง settings ของเพจที่ user เข้าถึงได้
+// PUT  /api/inbox/settings              → upsert (agent ก็แก้ได้ แต่ user_id ใน row คือ owner)
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext, assertPageAccess, getOwnerUserIdOfPage } from '@/lib/team'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,15 +13,21 @@ export async function GET(req: Request) {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ settings: [] })
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ settings: [] })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ settings: [] })
+
+    const accessible = Array.from(ctx.accessiblePageIds)
+    if (accessible.length === 0) return NextResponse.json({ settings: [] })
 
     const { searchParams } = new URL(req.url)
     const pageId = searchParams.get('pageId')
 
     const sb = supabaseAdmin()
-    let q = sb.from('inbox_settings').select('*').eq('user_id', userId)
-    if (pageId) q = q.eq('page_id', pageId)
+    let q = sb.from('inbox_settings').select('*').in('page_id', accessible)
+    if (pageId) {
+      if (!ctx.accessiblePageIds.has(pageId)) return NextResponse.json({ settings: [] })
+      q = q.eq('page_id', pageId)
+    }
     const { data } = await q
 
     return NextResponse.json({ settings: data || [] })
@@ -33,14 +40,22 @@ export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const { pageId, ...rest } = body
     if (!pageId) return NextResponse.json({ error: 'Missing pageId' }, { status: 400 })
 
-    const allowed: any = { user_id: userId, page_id: pageId }
+    const g = assertPageAccess(ctx, pageId)
+    if (!g.ok) return NextResponse.json({ error: g.error }, { status: g.status })
+
+    // settings row.user_id ต้องเป็น owner ของเพจเสมอ (UNIQUE user_id,page_id = 1 row ต่อเพจ)
+    const ownerId = getOwnerUserIdOfPage(ctx, pageId)
+    if (!ownerId) return NextResponse.json({ error: 'Page has no owner' }, { status: 500 })
+
+    const allowed: any = { user_id: ownerId, page_id: pageId }
     for (const k of [
       'ai_assist_enabled', 'ai_auto_categorize', 'ai_tone',
       'auto_reply_enabled', 'auto_reply_message',

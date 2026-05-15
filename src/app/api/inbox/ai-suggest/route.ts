@@ -4,7 +4,8 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { supabaseAdmin, getUserIdFromFbToken } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getCurrentUserContext } from '@/lib/team'
 import Anthropic from '@anthropic-ai/sdk'
 
 export const dynamic = 'force-dynamic'
@@ -17,8 +18,8 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions)
     if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const userId = await getUserIdFromFbToken(session.accessToken as string, (session as any).fbUserId)
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getCurrentUserContext(session.accessToken as string, (session as any).fbUserId)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { conversationId, instruction } = await req.json()
     if (!conversationId) {
@@ -31,9 +32,11 @@ export async function POST(req: Request) {
       .from('conversations')
       .select('id, customer_name, page_id')
       .eq('id', conversationId)
-      .eq('user_id', userId)
       .single()
     if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!ctx.accessiblePageIds.has(conv.page_id)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     // ดึงข้อความล่าสุด 20 ข้อความ
     const { data: messages } = await sb
@@ -45,11 +48,10 @@ export async function POST(req: Request) {
 
     const recent = (messages || []).reverse()
 
-    // ดึง knowledge base + tone จาก settings
+    // ดึง knowledge base + tone จาก settings (per-page; ไม่ filter ตาม user_id เพราะ agent ก็ใช้ของ owner)
     const { data: settings } = await sb
       .from('inbox_settings')
       .select('ai_tone, knowledge_base')
-      .eq('user_id', userId)
       .eq('page_id', conv.page_id)
       .single()
 
